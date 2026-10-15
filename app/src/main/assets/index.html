@@ -44,10 +44,21 @@
     .app-menu.open { display: block; }
     .app-menu button { display: block; width: 100%; padding: 11px 12px; text-align: left; border: 0; border-radius: 7px; background: transparent; color: #e2e8f0; font-size: .9rem; }
     .app-menu button:hover, .app-menu button:focus-visible, .app-menu button:active { background: #334155; }
+    .header-brand {
+      width: fit-content;
+      max-width: calc(100% - 44px);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      text-align: left;
+    }
     .app-mark {
       width: 58px;
       height: 58px;
-      margin: 0 auto 10px;
+      flex: 0 0 58px;
+      margin: 0;
       display: block;
       overflow: hidden;
       border-radius: 15px;
@@ -55,13 +66,15 @@
       box-shadow: 0 6px 18px rgba(18, 63, 145, 0.24);
     }
     .app-mark svg { display: block; width: 100%; height: 100%; }
+    .header-copy { min-width: 0; }
     header h1 {
       font-size: 1.35rem;
       font-weight: 750;
       letter-spacing: 0.04em;
       color: #f1f5f9;
+      line-height: 1.3;
     }
-    header p { color: var(--muted); font-size: 0.8rem; margin-top: 5px; }
+    header p { color: var(--muted); font-size: 0.8rem; margin-top: 3px; line-height: 1.4; }
 
     .card {
       background: var(--card);
@@ -168,6 +181,7 @@
       min-height: 1.4em;
       margin-top: 8px;
     }
+    .filter-hint { font-size: 0.7rem; line-height: 1.25; margin: 0 0 4px; }
     .status.error { color: var(--danger); }
     .status.ok { color: var(--success); }
 
@@ -189,6 +203,26 @@
       letter-spacing: 0.03em;
     }
     tr:hover td { background: rgba(59, 130, 246, 0.06); }
+    /* 手动填写独立栏：固定两行，不影响原版 IP 结果表样式。 */
+    .manual-card { padding: 7px 9px; margin-bottom: 10px; }
+    .manual-card .card-title { margin-bottom: 5px; font-size: .8rem; }
+    .manual-form { display: grid; grid-template-columns: 20px minmax(120px, 1fr) calc((100% - 20px) / 5); align-items: center; gap: 5px; }
+    .manual-form input:not([type="checkbox"]) { display: block; width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 5px; font-size: .75rem; border-radius: 5px; }
+    .manual-form .manual-ip { min-width: 120px; font-family: ui-monospace, monospace; }
+    .manual-form .manual-check { display: flex; justify-content: center; align-items: center; }
+    .manual-second-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: start; gap: 5px; }
+    .manual-form .manual-measure { min-width: 0; }
+    .manual-form button { width: 100%; min-width: 0; padding: 4px 3px; font-size: .75rem; }
+    .manual-form .manual-action button { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .manual-form .manual-action button:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    .manual-speed-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    @media (max-width: 380px) {
+      .manual-card { padding: 6px 7px; }
+      .manual-form { grid-template-columns: 18px minmax(120px, 1fr) calc((100% - 16px) / 5); gap: 4px; }
+      .manual-second-row { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+      .manual-form input:not([type="checkbox"]) { padding: 4px 3px; font-size: .72rem; }
+      .manual-form button { padding: 4px 3px; font-size: .72rem; }
+    }
     td.num { font-variant-numeric: tabular-nums; }
     .ip { font-family: ui-monospace, monospace; font-size: 0.8rem; }
     .badge {
@@ -249,18 +283,22 @@
           <button type="button" role="menuitem" id="reloadMenu">重新加载</button>
         </div>
       </div>
-      <div class="app-mark" aria-hidden="true">
-        <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
-          <path fill="#123F91" d="M0 0H240V240H0Z"/>
-          <path fill="#fff" d="M58 132C43 132 36 121 39 109C42 97 53 92 65 94C70 72 88 61 107 66C123 69 132 81 135 96C151 91 168 101 170 117C172 133 161 143 145 143H62Z"/>
-          <path d="M77 158L106 176L145 156M106 176V195" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
-          <path fill="#fff" d="M69 158a8 8 0 1 0 16 0a8 8 0 1 0-16 0M98 176a8 8 0 1 0 16 0a8 8 0 1 0-16 0M137 156a8 8 0 1 0 16 0a8 8 0 1 0-16 0"/>
-          <circle cx="173" cy="82" r="10" fill="#FF8A35"/>
-          <path d="M174 103Q190 119 174 135" fill="none" stroke="#FF8A35" stroke-width="5" stroke-linecap="round"/>
-        </svg>
+      <div class="header-brand">
+        <div class="app-mark" aria-hidden="true">
+          <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#123F91" d="M0 0H240V240H0Z"/>
+            <path fill="#fff" d="M58 132C43 132 36 121 39 109C42 97 53 92 65 94C70 72 88 61 107 66C123 69 132 81 135 96C151 91 168 101 170 117C172 133 161 143 145 143H62Z"/>
+            <path d="M77 158L106 176L145 156M106 176V195" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+            <path fill="#fff" d="M69 158a8 8 0 1 0 16 0a8 8 0 1 0-16 0M98 176a8 8 0 1 0 16 0a8 8 0 1 0-16 0M137 156a8 8 0 1 0 16 0a8 8 0 1 0-16 0"/>
+            <circle cx="173" cy="82" r="10" fill="#FF8A35"/>
+            <path d="M174 103Q190 119 174 135" fill="none" stroke="#FF8A35" stroke-width="5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="header-copy">
+          <h1>CF 优选助手</h1>
+          <p>优选 · 延迟 · 测速 · 订阅</p>
+        </div>
       </div>
-      <h1>CF 优选助手</h1>
-      <p>Cloudflare IP 优选 · 延迟测速 · 订阅管理</p>
     </header>
 
     <div class="card">
@@ -271,14 +309,13 @@
           <option value="全部">全部线路</option>
         </select>
       </div>
-      <div class="status" style="margin:0 0 10px">国家/地区使用原有中文名称与代码；自定义 TXT 也可按国家筛选</div>
       <div class="row">
         <input
           id="sourceInput"
           type="url"
           style="width:100%;flex:1;min-width:0"
           value=""
-          placeholder="自定义 TXT 数据源网址（留空则使用所选地区的内置源）"
+          placeholder="自定义txt数据源网址（删除恢复默认）"
           aria-label="自定义 TXT 数据源网址"
         />
       </div>
@@ -292,6 +329,22 @@
         <button id="btnUpload" class="success" disabled>覆盖上传</button>
       </div>
       <div class="status" id="status"></div>
+    </div>
+
+    <div class="card manual-card">
+      <div class="card-title">手动填写 <span style="font-weight:400">（勾选后随追加/覆盖上传）</span></div>
+      <div class="manual-form">
+        <div class="manual-check"><input type="checkbox" class="checkbox" id="manualSelect" aria-label="选择手动填写记录上传" /></div>
+        <input id="manualIp" class="manual-ip" placeholder="IPv4 / IPv6 / 域名" aria-label="手动 IPv4、IPv6 或域名" />
+        <input id="manualPort" inputmode="numeric" placeholder="端口" aria-label="手动端口" />
+        <div class="manual-second-row">
+          <input id="manualCountry" placeholder="国家" aria-label="手动国家代码，如 JP" />
+          <input id="manualRoute" class="manual-route" placeholder="线路" aria-label="手动线路" />
+          <div class="manual-measure manual-latency"><input id="manualLatency" inputmode="decimal" placeholder="延迟ms" aria-label="手动延迟，单位毫秒" /></div>
+          <div class="manual-measure manual-speed"><input id="manualSpeed" inputmode="decimal" placeholder="速度Mbps" aria-label="手动速度，单位 Mbps" /><div id="manualSpeedStatus" class="manual-speed-status" aria-live="polite"></div></div>
+          <div class="manual-action"><button type="button" class="secondary" id="manualSpeedTest">测速</button></div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -332,6 +385,8 @@
     let activeTopSelection = null;
     let lastSourceRegion = "JP";
     let speedSortDirection = null;
+    let defaultRegions = {};
+    let customCountries = false;
 
     const $ = id => document.getElementById(id);
     const statusEl = $("status");
@@ -344,22 +399,86 @@
       statusEl.className = "status" + (type ? " " + type : "");
     }
     function itemKey(item) { return `${item.ip}:${item.port}`; }
+    function formatIpPort(ip, port) {
+      const host = String(ip ?? "").trim();
+      return `${host.includes(":") && !(host.startsWith("[") && host.endsWith("]")) ? `[${host}]` : host}:${port}`;
+    }
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, ch => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
       }[ch]));
     }
+    function selectedCount() {
+      return selected.size + ($("manualSelect").checked ? 1 : 0);
+    }
     function updateActionButtons() {
       const hasItems = allItems.length > 0;
+      const hasSelection = selected.size > 0 || $("manualSelect").checked;
       $("btnOptimize").disabled = !hasItems;
       $("btnTop3").disabled = allItems.length === 0;
-      $("btnAppend").disabled = selected.size === 0;
-      $("btnUpload").disabled = selected.size === 0;
+      $("btnAppend").disabled = !hasSelection;
+      $("btnUpload").disabled = !hasSelection;
     }
-    const FIXED_COUNTRIES = new Set(["HK", "TW", "SG", "JP", "US", "KR", "GB", "DE", "RU", "NL", "SE", "AU", "VN", "IN", "LV", "FI"]);
-    function countryCategory(code) {
+    function countryCode(code) {
       const value = String(code || "").trim().toUpperCase();
-      return value && FIXED_COUNTRIES.has(value) ? value : "其他";
+      return /^[A-Z]{2}$/.test(value) ? value : "";
+    }
+    function countryCategory(code) {
+      return countryCode(code) || "其他";
+    }
+    function countryLabel(code) {
+      const configured = defaultRegions[code]?.name;
+      if (configured) return configured;
+      try {
+        const name = new Intl.DisplayNames(["zh-CN"], { type: "region" }).of(code);
+        if (name && name !== code) return `${name} ${code}`;
+      } catch {}
+      return code;
+    }
+    function renderRegionOptions(codes, includeOther = false, includeAll = false) {
+      const sel = $("regionSelect");
+      const previous = sel.value;
+      sel.innerHTML = "";
+      const list = [...new Set((codes || []).filter(code => code && code !== "其他" && code !== "全部国家"))];
+      list.sort((a, b) => {
+        const nameA = countryLabel(a).replace(/\s+[A-Z]{2}$/, "");
+        const nameB = countryLabel(b).replace(/\s+[A-Z]{2}$/, "");
+        return nameA.localeCompare(nameB, "zh-CN") || a.localeCompare(b);
+      });
+      for (const code of list) {
+        const opt = document.createElement("option");
+        opt.value = code;
+        opt.textContent = countryLabel(code);
+        sel.appendChild(opt);
+      }
+      if (includeOther) {
+        const other = document.createElement("option");
+        other.value = "其他";
+        other.textContent = "其他";
+        sel.appendChild(other);
+      }
+      if (includeAll) {
+        const all = document.createElement("option");
+        all.value = "全部国家";
+        all.textContent = "全部国家";
+        sel.appendChild(all);
+      }
+      if ([...sel.options].some(option => option.value === previous)) sel.value = previous;
+      else sel.value = includeAll ? "全部国家" : (list.includes("JP") ? "JP" : (list[0] || "JP"));
+    }
+    function restoreDefaultRegions() {
+      customCountries = false;
+      // 日本 JP 是明确的恢复默认值；即使当前数据没有日本记录，也保留该选项。
+      renderRegionOptions([...new Set([...Object.keys(defaultRegions), "JP"])], false, false);
+      $("regionSelect").value = "JP";
+      lastSourceRegion = "JP";
+    }
+    function showCustomRegions(items) {
+      customCountries = true;
+      const codes = [...new Set(items.map(item => countryCode(item.country)).filter(Boolean))];
+      const includeOther = items.some(item => !countryCode(item.country));
+      renderRegionOptions(codes, includeOther, true);
+      $("regionSelect").value = "全部国家";
     }
     function updateRouteOptions(routes) {
 
@@ -383,29 +502,21 @@
         const r = await fetch(API + "/api/regions");
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || "加载地区失败");
-        const sel = $("regionSelect");
-        sel.innerHTML = "";
-        for (const [key, val] of Object.entries(data.regions || {})) {
-          const opt = document.createElement("option");
-          opt.value = key;
-          opt.textContent = val.name || key;
-          sel.appendChild(opt);
-        }
-        const other = document.createElement("option");
-        other.value = "其他";
-        other.textContent = "其他";
-        sel.appendChild(other);
-        sel.value = "JP";
-        lastSourceRegion = "JP";
+        defaultRegions = data.regions || {};
+        restoreDefaultRegions();
         await loadList();
       } catch (e) {
+        // 即使地区接口暂时失败，也保留可选的默认日本项。
+        restoreDefaultRegions();
+        updateRouteOptions([]);
         setStatus("加载地区失败：" + e.message, "error");
       }
     }
     async function loadList() {
       const selectedCountry = $("regionSelect").value || "JP";
-      const region = FIXED_COUNTRIES.has(selectedCountry) ? selectedCountry : lastSourceRegion;
-      if (FIXED_COUNTRIES.has(selectedCountry)) lastSourceRegion = selectedCountry;
+      const isDefaultCountry = Object.prototype.hasOwnProperty.call(defaultRegions, selectedCountry);
+      const region = isDefaultCountry ? selectedCountry : lastSourceRegion;
+      if (isDefaultCountry) lastSourceRegion = selectedCountry;
       setStatus("正在加载列表...");
       $("btnLoad").disabled = true;
       try {
@@ -420,14 +531,14 @@
           ...it, route: it.route || "none", country: it.country || (source ? "" : region), speedMbps: null, speedError: null, speedStatus: ""
         }));
         const customSource = Boolean(source);
-        if (sourceItems.length || !customSource) {
-          if (customSource && sourceItems.length) {
-            // 自定义 TXT 加载成功后，以第一条记录的国家代码选择现有中文选项；未识别时选择“其他”。
-            $("regionSelect").value = countryCategory(sourceItems[0].country);
-          }
-          const selected = $("regionSelect").value || "JP";
-          updateRouteOptions([...new Set(sourceItems.filter(it => countryCategory(it.country) === selected).map(it => it.route || "none"))]);
+        if (customSource) {
+          showCustomRegions(sourceItems);
+        } else {
+          customCountries = false;
+          if (![...$("regionSelect").options].some(option => option.value === $("regionSelect").value)) restoreDefaultRegions();
         }
+        const selectedCountryCode = $("regionSelect").value || "JP";
+        updateRouteOptions([...new Set(sourceItems.filter(it => selectedCountryCode === "全部国家" || countryCategory(it.country) === selectedCountryCode).map(it => it.route || "none"))]);
         selected.clear();
         activeTopSelection = null;
         speedSortDirection = null;
@@ -440,6 +551,7 @@
       } catch (e) {
         sourceItems = [];
         allItems = [];
+        updateRouteOptions([]);
         selected.clear();
         activeTopSelection = null;
         currentPage = 1;
@@ -453,7 +565,7 @@
     function applyRouteFilter(clearSelection = true) {
       const route = $("routeSelect").value || "全部";
       const country = $("regionSelect").value || "JP";
-      allItems = sourceItems.filter(it => countryCategory(it.country) === country && (route === "全部" || (it.route || "none") === route));
+      allItems = sourceItems.filter(it => (country === "全部国家" || countryCategory(it.country) === country) && (route === "全部" || (it.route || "none") === route));
       if (clearSelection) {
         selected.clear();
         activeTopSelection = null;
@@ -501,7 +613,7 @@
     }
     function selectTop(n) {
       // 前 3 / 前 5 互斥：点击另一项时只保留对应数量；再次点击当前项则清空。
-      // 每次自动选择都会覆盖手动勾选，并按当前第一页排序结果选择。
+      // 自动选择只作用于普通结果列表，手动填写行的勾选状态保持不变。
       currentPage = 1;
       if (activeTopSelection === n) {
         selected.clear();
@@ -518,12 +630,66 @@
       setStatus(`已勾选第一页前 ${Math.min(n, allItems.length, PAGE_SIZE)} 个`, "ok");
       updateActionButtons();
     }
+    function manualAddress() {
+      let host = $("manualIp").value.trim();
+      let portText = $("manualPort").value.trim();
+      if (!host) throw new Error("请先填写 IP 或域名");
+      let embeddedPort = "";
+      if (host.startsWith("[")) {
+        const match = host.match(/^\[([^\]]+)\](?::(\d+))?$/);
+        if (!match) throw new Error("IPv6 地址格式不正确");
+        host = match[1]; embeddedPort = match[2] || "";
+      } else {
+        const colons = (host.match(/:/g) || []).length;
+        if (colons === 1) {
+          const match = host.match(/^(.+):(\d+)$/);
+          if (match) { host = match[1]; embeddedPort = match[2]; }
+        }
+        // 多个冒号视为未加方括号的 IPv6 地址，避免把 IPv6 尾段误当端口。
+      }
+      const port = portText || embeddedPort || "443";
+      if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new Error("端口必须是 1–65535 的数字");
+      const isIPv6 = host.includes(":") && /^[0-9a-fA-F:.]+$/.test(host);
+      const ipv4Shape = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+      const isIPv4 = ipv4Shape && host.split(".").every(part => Number(part) >= 0 && Number(part) <= 255);
+      const isDomain = host.length <= 253 && /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/.test(host) && !ipv4Shape;
+      if (!(isIPv6 || isIPv4 || isDomain)) throw new Error("请输入有效的 IPv4、IPv6 或域名");
+      const displayHost = isIPv6 ? `[${host}]` : host;
+      return { ip: host, port, ipPort: `${displayHost}:${port}` };
+    }
+    function manualLine() {
+      const addr = manualAddress();
+      const country = $("manualCountry").value.trim().toUpperCase();
+      const route = $("manualRoute").value.trim();
+      const latencyRaw = $("manualLatency").value.trim();
+      const speedRaw = $("manualSpeed").value.trim();
+      const latencyNum = latencyRaw.match(/^([0-9]+(?:\.[0-9]+)?)(?:\s*ms)?$/i);
+      const speedNum = speedRaw.match(/^([0-9]+(?:\.[0-9]+)?)(?:\s*mbps)?$/i);
+      if (latencyRaw && !latencyNum) throw new Error("延迟请输入数字，单位默认为 ms");
+      if (speedRaw && !speedNum) throw new Error("速度请输入数字，单位默认为 Mbps");
+      const latency = latencyNum ? `${latencyNum[1]}ms` : "";
+      const speed = speedNum ? `${speedNum[1]}Mbps` : "";
+      const metrics = [latency, speed].filter(Boolean).join(" ");
+      return `${addr.ipPort}#自选 | ${country} | ${route} |${metrics ? ` ${metrics}` : ""} ${metrics ? "| " : ""}${addr.ipPort}`;
+    }
+    function testManualSpeed() {
+      try {
+        const addr = manualAddress();
+        const item = { ip: addr.ip, port: Number(addr.port), country: $("manualCountry").value.trim(), route: $("manualRoute").value.trim() || "none", manual: true, speedMbps: null, speedError: null, speedStatus: "" };
+        speedTest(item);
+      } catch (e) { setStatus(e.message || "无法测速", "error"); }
+    }
     async function upload(mode = "overwrite") {
-      if (selected.size === 0) return;
+      const includeManual = $("manualSelect").checked;
+      if (selected.size === 0 && !includeManual) return;
       const lines = [];
+      if (includeManual) {
+        try { lines.push(manualLine()); }
+        catch (e) { setStatus(e.message || "手动填写记录无效", "error"); return; }
+      }
       allItems.forEach(it => {
         if (!selected.has(itemKey(it))) return;
-        const ipPort = `${it.ip}:${it.port}`;
+        const ipPort = formatIpPort(it.ip, it.port);
         const route = it.route || "none";
         const country = String(it.country || "").toUpperCase();
         const latency = it.latencyMs != null ? `${it.latencyMs}ms` : "";
@@ -561,6 +727,25 @@
     }
     function updateItemSpeedView(item) {
       const key = itemKey(item);
+      if (item.manual) {
+        const speedInput = $("manualSpeed");
+        const speedStatus = $("manualSpeedStatus");
+        if (item.speedStatus) {
+          speedStatus.textContent = item.speedStatus;
+          setStatus("手动行：" + item.speedStatus);
+        } else if (item.speedMbps != null) {
+          // 仅将真实测速结果写入数值框；状态显示在页面已有的状态栏，手动栏保持两行。
+          speedInput.value = item.speedMbps.toFixed(1);
+          speedStatus.textContent = "测速完成（Mbps）";
+          setStatus("手动行测速完成：" + item.speedMbps.toFixed(1) + " Mbps", "ok");
+        } else if (item.speedError) {
+          speedStatus.textContent = item.speedError;
+          setStatus("手动行测速失败：" + item.speedError, "error");
+        } else {
+          speedStatus.textContent = "";
+        }
+        return;
+      }
       const row = [...tbody.querySelectorAll("tr[data-key]")].find(el => el.dataset.key === key);
       if (!row) return;
       const cell = row.querySelector(".speed-cell");
@@ -680,7 +865,7 @@
       currentPage = Math.min(Math.max(1, currentPage), pages);
       const start = (currentPage - 1) * PAGE_SIZE;
       const pageItems = allItems.slice(start, start + PAGE_SIZE);
-      countInfo.textContent = total ? `共 ${total} 个 · 已选 ${selected.size}` : "共 0 个";
+      countInfo.textContent = total ? `共 ${total} 个 · 已选 ${selectedCount()}` : (selectedCount() ? `共 0 个 · 已选 ${selectedCount()}` : "共 0 个");
       if (!pageItems.length) {
         tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无有效 IP</td></tr>';
       } else {
@@ -729,7 +914,7 @@
           if (cb.checked) selected.add(cb.dataset.key);
           else selected.delete(cb.dataset.key);
           updateActionButtons();
-          countInfo.textContent = total ? `共 ${total} 个 · 已选 ${selected.size}` : "共 0 个";
+          countInfo.textContent = total ? `共 ${total} 个 · 已选 ${selectedCount()}` : (selectedCount() ? `共 0 个 · 已选 ${selectedCount()}` : "共 0 个");
           const currentKeys = pageItems.map(itemKey);
           const n = currentKeys.filter(key => selected.has(key)).length;
           $("checkAll").checked = currentKeys.length > 0 && n === currentKeys.length;
@@ -764,23 +949,31 @@
       });
       render();
     };
+    $("manualSelect").onchange = () => {
+      updateActionButtons();
+      countInfo.textContent = allItems.length ? `共 ${allItems.length} 个 · 已选 ${selectedCount()}` : (selectedCount() ? `共 0 个 · 已选 ${selectedCount()}` : "共 0 个");
+    };
+    $("manualSpeedTest").onclick = testManualSpeed;
     $("btnLoad").onclick = loadList;
     $("regionSelect").onchange = () => {
       const country = $("regionSelect").value;
       $("routeSelect").value = "全部";
-      if ($("sourceInput").value.trim()) {
-        // 自定义 TXT 已加载时只切换筛选，不重新请求数据，也不覆盖用户当前选择。
-        updateRouteOptions([...new Set(sourceItems.filter(it => countryCategory(it.country) === country).map(it => it.route || "none"))]);
-        applyRouteFilter();
-      } else if (country === "其他") {
-        // “其他”是筛选分类，不是内置数据源地区代码。
-        updateRouteOptions([...new Set(sourceItems.filter(it => countryCategory(it.country) === country).map(it => it.route || "none"))]);
+      if ($("sourceInput").value.trim() || country === "其他" || country === "全部国家") {
+        // 自定义 TXT 中仅切换当前数据的国家分类，不重新请求数据。
+        updateRouteOptions([...new Set(sourceItems.filter(it => country === "全部国家" || countryCategory(it.country) === country).map(it => it.route || "none"))]);
         applyRouteFilter();
       } else {
         lastSourceRegion = country;
         loadList();
       }
     };
+    $("sourceInput").addEventListener("change", () => {
+      if (!$("sourceInput").value.trim() && customCountries) {
+        restoreDefaultRegions();
+        updateRouteOptions([]);
+        loadList();
+      }
+    });
     $("routeSelect").onchange = () => applyRouteFilter();
     $("btnOptimize").onclick = optimize;
     $("btnTop3").onclick = () => selectTop(3);
