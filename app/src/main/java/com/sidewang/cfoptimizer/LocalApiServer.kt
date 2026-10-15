@@ -188,7 +188,15 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         return parts.size == 4 && parts.all { part -> part.isNotEmpty() && (part.toIntOrNull()?.let { n -> n in 0..255 } == true) && (part.length == 1 || !part.startsWith('0')) }
     }
 
-    private fun validItem(item: JSONObject): Boolean = validIp(item.optString("ip")) && item.optInt("port", 0) in 1..65535
+    private fun validHost(host: String): Boolean {
+        if (validIp(host)) return true
+        // 不把格式错误的纯数字 IPv4 当成域名放行。
+        if (host.matches(Regex("\\d+(?:\\.\\d+){3}"))) return false
+        if (host.length !in 1..253) return false
+        return host.matches(Regex("(?i)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*"))
+    }
+
+    private fun validItem(item: JSONObject): Boolean = validHost(item.optString("ip")) && item.optInt("port", 0) in 1..65535
 
     private fun optimize(input: JSONObject): Response {
         val source = input.optJSONArray("items") ?: JSONArray()
@@ -416,12 +424,13 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
 
     private fun normalizeSubscriptionLine(line: String): String? {
         val trimmed = line.trim()
-        val match = Regex("^\\[?([0-9a-fA-F:.]+)]?:(\\d{1,5})(.*)$").find(trimmed) ?: return null
-        val ip = match.groupValues[1].removePrefix("[").removeSuffix("]")
-        val port = match.groupValues[2].toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
-        if (!validIp(ip)) return null
-        val ipPort = "$ip:$port"
-        val tail = match.groupValues[3]
+        // IPv6 输入必须使用 [IPv6]:端口；IPv4 和域名使用 host:端口。
+        val match = Regex("^(?:\\[([0-9a-fA-F:.]+)]|([^\\s:#|]+)):(\\d{1,5})(.*)$").find(trimmed) ?: return null
+        val host = match.groupValues[1].ifBlank { match.groupValues[2] }
+        val port = match.groupValues[3].toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+        if (!validHost(host)) return null
+        val ipPort = "${if (host.contains(':')) "[$host]" else host}:$port"
+        val tail = match.groupValues[4]
         val parts = tail.substringAfter('#', "").split('|').map { it.trim() }
         var country = parts.getOrNull(1).orEmpty().uppercase(Locale.ROOT)
         var route = parts.getOrNull(2).orEmpty()
