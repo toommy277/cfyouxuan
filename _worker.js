@@ -104,12 +104,12 @@ export default {
         .filter(Boolean);
 
       const valid = lines.filter(line =>
-        /^(\[[0-9a-fA-F:]+\]|(?:\d{1,3}\.){3}\d{1,3}):\d{1,5}(?:#.*)?$/.test(line)
+        /^(?:\[[0-9a-fA-F:.]+\]|(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*):\d{1,5}(?:#.*)?$/.test(line)
       );
 
       if (valid.length === 0 || valid.length !== lines.length) {
         return new Response(
-          "请提供格式正确的 IP:端口 记录；旧订阅未修改。",
+          "请提供格式正确的 IPv4/域名:端口或 [IPv6]:端口记录；旧订阅未修改。",
           { status: 400, headers }
         );
       }
