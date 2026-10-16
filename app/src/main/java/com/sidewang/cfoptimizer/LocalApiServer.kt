@@ -372,6 +372,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
 
         var outgoingLines = incomingLines
         var added = incomingLines.size
+        var updated = 0
         if (mode == "append") {
             // 追加前必须成功读取当前订阅；读取失败时绝不退化为空文件覆盖。
             val readConn = url.openConnection() as HttpsURLConnection
@@ -404,6 +405,9 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
                 incomingByIp[key] = normalized
             }
             added = incomingByIp.keys.count { !normalizedExisting.containsKey(it) }
+            updated = incomingByIp.count { (key, line) ->
+                normalizedExisting.containsKey(key) && normalizedExisting[key] != line
+            }
             // LinkedHashMap 对已存在键赋值会保留原位置；更新信息但不影响其他 IP。
             incomingByIp.forEach { (key, line) -> normalizedExisting[key] = line }
             outgoingLines = normalizedExisting.values.toList()
@@ -430,7 +434,12 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         val detail = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
         conn.disconnect()
         if (code !in 200..299) return json(JSONObject().put("error", "Worker 更新失败：HTTP $code").put("detail", detail), Response.Status.INTERNAL_ERROR)
-        return json(JSONObject().put("ok", true).put("added", if (mode == "append") added else outgoingLines.size).put("count", outgoingLines.size).put("message", if (mode == "append") "订阅已追加" else "订阅已覆盖").put("detail", detail))
+        return json(JSONObject().put("ok", true)
+            .put("added", if (mode == "append") added else outgoingLines.size)
+            .put("updated", if (mode == "append") updated else 0)
+            .put("count", outgoingLines.size)
+            .put("message", if (mode == "append") "订阅已追加" else "订阅已覆盖")
+            .put("detail", detail))
     }
 
     private fun normalizeSubscriptionLine(line: String): String? {
