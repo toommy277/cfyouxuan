@@ -214,9 +214,35 @@
     .manual-form .manual-measure { min-width: 0; }
     .manual-form button { width: 100%; min-width: 0; padding: 4px 3px; font-size: .75rem; }
     .manual-form .manual-action button { background: #2563eb; border-color: #2563eb; color: #fff; }
-    .manual-form .manual-latency-action button { background: #E74C3C; border-color: #E74C3C; color: #fff; }
-    .manual-form .manual-latency-action button:hover { background: #C0392B; border-color: #C0392B; }
-    .manual-form .manual-action button:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    /* 延迟按钮的所有交互状态均单独指定，避免 WebView 悬停/焦点残留时被测速蓝色覆盖。 */
+    .manual-form .manual-latency-action button,
+    .manual-form .manual-latency-action button:hover,
+    .manual-form .manual-latency-action button:focus,
+    .manual-form .manual-latency-action button:focus-visible,
+    .manual-form .manual-latency-action button:active {
+      background: #E74C3C !important;
+      background-color: #E74C3C !important;
+      border-color: #E74C3C !important;
+      color: #fff !important;
+      opacity: 1 !important;
+    }
+    /* 测试过程中变为深红；disabled 状态也不降低透明度。 */
+    .manual-form .manual-latency-action button.testing,
+    .manual-form .manual-latency-action button.testing:hover,
+    .manual-form .manual-latency-action button.testing:focus,
+    .manual-form .manual-latency-action button.testing:focus-visible,
+    .manual-form .manual-latency-action button.testing:active,
+    .manual-form .manual-latency-action button.testing:disabled {
+      background: #C0392B !important;
+      background-color: #C0392B !important;
+      border-color: #C0392B !important;
+      color: #fff !important;
+      opacity: 1 !important;
+    }
+    /* 蓝色 hover 只应用于测速按钮，明确排除延迟按钮。 */
+    .manual-form .manual-action:not(.manual-latency-action) button:hover,
+    .manual-form .manual-action:not(.manual-latency-action) button:focus,
+    .manual-form .manual-action:not(.manual-latency-action) button:active { background: #1d4ed8; border-color: #1d4ed8; }
     .manual-speed-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     @media (max-width: 380px) {
       .manual-card { padding: 6px 7px; }
@@ -683,6 +709,17 @@
       } catch (e) { setStatus(e.message || "无法测速", "error"); }
     }
     async function testManualLatency() {
+      const button = $("manualLatencyTest");
+      if (button.disabled) return;
+      button.classList.add("testing");
+      // Android WebView 中全局按钮样式可能在 disabled/点击状态下覆盖 CSS，
+      // 用内联 !important 强制测试期间为深红色，避免变蓝。
+      button.style.setProperty("background", "#C0392B", "important");
+      button.style.setProperty("background-color", "#C0392B", "important");
+      button.style.setProperty("border-color", "#C0392B", "important");
+      button.style.setProperty("color", "#FFFFFF", "important");
+      button.style.setProperty("opacity", "1", "important");
+      button.disabled = true;
       try {
         const addr = manualAddress();
         const r = await fetch(API + "/api/latency", {
@@ -694,6 +731,16 @@
         $("manualLatency").value = String(data.latencyMs);
         setStatus("延迟测试成功", "ok");
       } catch (e) { setStatus("延迟测试失败：" + (e.message || "未知原因"), "error"); }
+      finally {
+        // 先解除 disabled，再清除测试期间的强制样式；CSS 会恢复默认红色。
+        button.disabled = false;
+        button.classList.remove("testing");
+        button.style.removeProperty("background");
+        button.style.removeProperty("background-color");
+        button.style.removeProperty("border-color");
+        button.style.removeProperty("color");
+        button.style.removeProperty("opacity");
+      }
     }
     async function upload(mode = "overwrite") {
       const includeManual = $("manualSelect").checked;
