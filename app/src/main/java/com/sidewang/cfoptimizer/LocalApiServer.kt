@@ -45,6 +45,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
                 session.method == Method.GET && session.uri == "/api/list" -> listItems(session)
                 session.method == Method.POST && session.uri == "/api/optimize" -> optimize(body(session))
                 session.method == Method.POST && session.uri == "/api/speed" -> speed(body(session))
+                session.method == Method.POST && session.uri == "/api/latency" -> latency(body(session))
                 session.method == Method.POST && session.uri == "/api/upload" -> upload(body(session))
                 else -> json(JSONObject().put("error", "Not found"), Response.Status.NOT_FOUND)
             }
@@ -234,6 +235,14 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         }
     }
 
+    private fun latency(input: JSONObject): Response {
+        val item = input.optJSONObject("item") ?: return json(JSONObject().put("error", "缺少 IP 信息"), Response.Status.BAD_REQUEST)
+        if (!validItem(item)) return json(JSONObject().put("error", "IP 或端口无效"), Response.Status.BAD_REQUEST)
+        val result = tcpProbe(item)
+        return if (result.optBoolean("ok")) json(result)
+        else json(result, Response.Status.BAD_REQUEST)
+    }
+
     private fun speed(input: JSONObject): Response {
         val item = input.optJSONObject("item")
         if (item == null || !validItem(item)) return json(JSONObject().put("error", "IP 或端口无效"), Response.Status.BAD_REQUEST)
@@ -390,12 +399,14 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
             incomingLines.forEach { line ->
                 val normalized = normalizeSubscriptionLine(line)
                     ?: return json(JSONObject().put("error", "无法识别本次上传记录，已取消追加"), Response.Status.BAD_REQUEST)
+                // 以 IP+端口（# 前的地址）为唯一键：相同键更新原记录，不同端口视为新记录。
                 val key = normalized.substringBefore('#').trim()
-                if (!normalizedExisting.containsKey(key) && !incomingByIp.containsKey(key)) incomingByIp[key] = normalized
+                incomingByIp[key] = normalized
             }
-            added = incomingByIp.size
-            if (added == 0) return json(JSONObject().put("ok", true).put("added", 0).put("count", normalizedExisting.size).put("message", "没有新增 IP，服务器内容未修改"))
-            outgoingLines = (normalizedExisting.values + incomingByIp.values).toList()
+            added = incomingByIp.keys.count { !normalizedExisting.containsKey(it) }
+            // LinkedHashMap 对已存在键赋值会保留原位置；更新信息但不影响其他 IP。
+            incomingByIp.forEach { (key, line) -> normalizedExisting[key] = line }
+            outgoingLines = normalizedExisting.values.toList()
         } else {
             val normalized = incomingLines.map { normalizeSubscriptionLine(it)
                 ?: return json(JSONObject().put("error", "无法识别本次上传记录，已取消覆盖"), Response.Status.BAD_REQUEST) }
