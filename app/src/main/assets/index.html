@@ -733,7 +733,11 @@
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || data.detail || `${actionName}失败`);
-        setStatus("上传成功", "ok");
+        if (mode === "append") {
+          setStatus(`追加上传成功，共 ${data.count} 个 IP，新增 ${data.added} 个，更新 ${data.updated} 个`, "ok");
+        } else {
+          setStatus(`覆盖上传成功，共 ${data.count} 个 IP`, "ok");
+        }
       } catch (e) {
         setStatus(`上传失败：${e.message || "未知原因"}`, "error");
       } finally {
