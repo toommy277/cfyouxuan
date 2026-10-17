@@ -207,15 +207,15 @@
     /* 最终上传框：只展示勾选项，可编辑并拖动确定上传顺序。 */
     .final-upload-card { padding: 8px 9px; margin-bottom: 10px; }
     .final-upload-card .card-title { margin-bottom: 6px; }
-    .final-upload-hint { color: var(--muted); font-size: .75rem; margin: 0 0 8px; }
+    .final-upload-hint { display: none; }
     /* 最终上传：紧凑单行，移除在左，测速按钮靠右，拖动手柄固定最右。 */
     .final-upload-list { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
-    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 34px minmax(105px, 1.5fr) 38px 44px 44px 43px 48px 42px 42px 22px; gap: 3px; align-items: center; min-width: 500px; box-sizing: border-box; }
+    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 34px minmax(105px, 1.5fr) 38px 22px 26px 26px 29px 42px 42px 22px; gap: 3px; align-items: center; min-width: 424px; box-sizing: border-box; }
     .final-upload-head { padding: 0 3px 2px; color: var(--muted); font-size: .62rem; }
     .final-upload-row { padding: 2px 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel, transparent); }
     .final-upload-row.dragging { opacity: .45; }
     .final-upload-row.drag-over { border-color: var(--primary); }
-    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 2px; font-size: .65rem; height: 25px; }
+    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 2px; font-size: .8rem; height: 25px; }
     .final-upload-row input[readonly] { border-color: transparent; background: transparent; color: var(--text); cursor: pointer; }
     .final-upload-row.editing input { border-color: var(--border); background: var(--input, var(--panel)); }
     .final-upload-row .final-ip { font-family: ui-monospace, monospace; }
@@ -695,9 +695,9 @@
         updateActionButtons();
         return;
       }
-      container.innerHTML = '<div class="final-upload-head"><span>移除</span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span>延迟</span><span>测速</span><span>排序</span></div>' + finalItems.map((it, index) => `
+      container.innerHTML = '<div class="final-upload-head"><span>×</span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span>延迟</span><span>测速</span><span>排序</span></div>' + finalItems.map((it, index) => `
         <div class="final-upload-row" draggable="true" data-final-key="${escapeHtml(it.sourceKey)}">
-          <button type="button" class="final-remove" data-action="remove" title="从最终上传列表移除" aria-label="移除">× 移除</button>
+          <button type="button" class="final-remove" data-action="remove" title="从最终上传列表移除" aria-label="移除">×</button>
           <input class="final-ip" data-field="editIp" value="${escapeHtml(it.editIp)}" aria-label="上传 IP" title="IP / 域名" readonly />
           <input data-field="editPort" value="${escapeHtml(it.editPort)}" inputmode="numeric" aria-label="上传端口" title="端口" readonly />
           <input class="final-country" data-field="editCountry" value="${escapeHtml(it.editCountry)}" aria-label="上传国家" placeholder="国家" title="国家" readonly />
