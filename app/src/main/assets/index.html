@@ -221,7 +221,8 @@
     .final-upload-row .final-ip { font-family: ui-monospace, monospace; white-space: nowrap; }
     .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; font-size: .8rem; }
     .final-upload-row button { padding: 3px 1px; min-width: 0; font-size: .6rem; white-space: nowrap; height: 25px; }
-    .final-upload-row .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; padding: 0; width: 24px; min-width: 24px; height: 22px; font-size: 1.15rem; line-height: 1; font-weight: 700; border-radius: 4px; }
+    .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; padding: 0; width: 24px; min-width: 24px; height: 22px; font-size: 1.15rem; line-height: 1; font-weight: 700; border-radius: 4px; }
+    .final-upload-head .final-remove { justify-self: center; cursor: pointer; }
     .final-upload-row .final-latency-test { background: #E74C3C; border-color: #E74C3C; color: white; }
     .final-upload-row .final-speed-test { background: #2563eb; border-color: #2563eb; color: white; }
     .final-upload-hint { font-size: .68rem; margin-bottom: 5px; }
@@ -536,7 +537,9 @@
         }
         const selectedCountryCode = $("regionSelect").value || "JP";
         updateRouteOptions([...new Set(sourceItems.filter(it => selectedCountryCode === "全部国家" || countryCategory(it.country) === selectedCountryCode).map(it => it.route).filter(Boolean))]);
-        selected.clear();
+        // 重新加载时保留最终上传列表；新列表中已存在的条目自动勾选。
+        const finalKeys = new Set(finalItems.map(item => item.sourceKey));
+        selected = new Set(sourceItems.filter(item => finalKeys.has(itemKey(item))).map(itemKey));
         activeTopSelection = null;
         speedSortDirection = null;
         $("speedSortHeader").textContent = "速度 ↕";
@@ -666,7 +669,9 @@
     function syncFinalItems() {
       const oldByKey = new Map(finalItems.map(item => [item.sourceKey, item]));
       const selectedSet = new Set(selected);
-      const next = finalItems.filter(item => selectedSet.has(item.sourceKey));
+      // 当前加载的数据里，取消勾选就移除；新一轮加载中不存在的旧条目继续保留。
+      const loadedKeys = new Set(sourceItems.map(itemKey));
+      const next = finalItems.filter(item => !loadedKeys.has(item.sourceKey) || selectedSet.has(item.sourceKey));
       const present = new Set(next.map(item => item.sourceKey));
       for (const item of allItems) {
         const key = itemKey(item);
@@ -690,12 +695,19 @@
     function renderFinalUpload() {
       const container = $("finalUploadList");
       $("finalUploadCount").textContent = `（${finalItems.length} 个）`;
+      const header = '<div class="final-upload-head"><button type="button" class="final-remove" data-action="remove-all" title="移除全部项目" aria-label="移除全部">×</button><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span></span><span></span><span></span></div>';
       if (!finalItems.length) {
-        container.innerHTML = '<div class="final-upload-empty">请先在下方 IP 结果中勾选要上传的项目</div>';
+        container.innerHTML = header + '<div class="final-upload-empty">请先在下方 IP 结果中勾选要上传的项目</div>';
+        container.querySelector('[data-action="remove-all"]').onclick = () => {
+          finalItems = [];
+          selected.clear();
+          render();
+          renderFinalUpload();
+        };
         updateActionButtons();
         return;
       }
-      container.innerHTML = '<div class="final-upload-head"><span></span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span></span><span></span><span></span></div>' + finalItems.map((it, index) => `
+      container.innerHTML = header + finalItems.map((it, index) => `
         <div class="final-upload-row" draggable="true" data-final-key="${escapeHtml(it.sourceKey)}">
           <button type="button" class="final-remove" data-action="remove" title="从最终上传列表移除" aria-label="移除">×</button>
           <input class="final-ip" data-field="editIp" value="${escapeHtml(it.editIp)}" aria-label="上传 IP" title="IP / 域名" readonly />
@@ -708,6 +720,12 @@
           <button type="button" class="final-speed-test" data-action="speed" title="测试速度">测速</button>
           <div class="final-drag" title="拖动排序" aria-label="拖动排序" role="button">☰</div>
         </div>`).join("");
+      container.querySelector('[data-action="remove-all"]').onclick = () => {
+        finalItems = [];
+        selected.clear();
+        render();
+        renderFinalUpload();
+      };
       container.querySelectorAll(".final-upload-row").forEach(row => {
         const key = row.dataset.finalKey;
         const item = finalItems.find(entry => entry.sourceKey === key);
