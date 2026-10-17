@@ -33,6 +33,12 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
     )
     private val routeCodes = setOf("NRT", "KIX", "HND", "HKG", "SIN", "TPE", "ICN", "LAX", "SJC", "FRA", "AMS", "LHR", "CDG", "ORD", "IAD", "SEA", "DFW", "MEL", "SYD")
 
+    // 测速：单次有效下载窗口约 6s（对齐 CFData）；多次请求在后端按 1.5s 间隔排队，连点不报错
+    private val minSpeedIntervalMs = 1500L
+    private val speedReadWindowMs = 6000L
+    private val speedQueueLock = Any()
+    private var nextSpeedAllowedAt = 0L
+
     override fun serve(session: IHTTPSession): Response {
         return try {
             when {
@@ -473,9 +479,25 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
             fun emit(data: JSONObject) {
                 try { writer.write(("data: " + data.toString() + "\n\n").toByteArray(Charsets.UTF_8)); writer.flush() } catch (_: Exception) {}
             }
-            val start = System.currentTimeMillis()
             var received = 0L
+            var start = System.currentTimeMillis()
             try {
+                // 排队：两次实际开测至少间隔 1.5s；前端可连点，只延后执行，不返回错误
+                val delayMs = synchronized(speedQueueLock) {
+                    val now = System.currentTimeMillis()
+                    val startAt = maxOf(now, nextSpeedAllowedAt)
+                    nextSpeedAllowedAt = startAt + minSpeedIntervalMs
+                    startAt - now
+                }
+                if (delayMs > 0L) {
+                    try {
+                        Thread.sleep(delayMs)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw IllegalStateException("测速已取消")
+                    }
+                }
+                start = System.currentTimeMillis()
                 val ip = item.getString("ip")
                 val port = item.getInt("port")
                 val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
@@ -489,7 +511,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
                     socket.close(); throw IllegalStateException("TLS 证书主机名验证失败")
                 }
                 val out = BufferedOutputStream(socket.getOutputStream())
-                out.write(("GET /__down?bytes=10000000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: */*\r\n\r\n").toByteArray(Charsets.US_ASCII)); out.flush()
+                out.write(("GET /__down?bytes=99999999 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: */*\r\n\r\n").toByteArray(Charsets.US_ASCII)); out.flush()
                 val inputStream = BufferedInputStream(socket.getInputStream())
                 val statusLine = readHttpLine(inputStream) ?: throw IllegalStateException("测速端点无响应")
                 val status = Regex("HTTP/\\d\\.\\d\\s+(\\d+)").find(statusLine)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -507,7 +529,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
                 val chunked = headers["transfer-encoding"]?.contains("chunked", true) == true
                 val length = headers["content-length"]?.toLongOrNull()
                 if (chunked) {
-                    while (System.currentTimeMillis() - startRead < 10000) {
+                    while (System.currentTimeMillis() - startRead < speedReadWindowMs) {
                         val line = readHttpLine(inputStream) ?: break
                         val size = line.substringBefore(';').trim().toLongOrNull(16) ?: break
                         if (size <= 0) { readHttpLine(inputStream); break }
@@ -524,11 +546,10 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
                             }
                         }
                         readHttpLine(inputStream)
-                        if (received >= 10_000_000L) break
                     }
                 } else {
                     val buffer = ByteArray(16 * 1024)
-                    while (System.currentTimeMillis() - startRead < 10000 && (length == null || received < length)) {
+                    while (System.currentTimeMillis() - startRead < speedReadWindowMs && (length == null || received < length)) {
                         val want = if (length == null) buffer.size else minOf(buffer.size.toLong(), length - received).toInt()
                         val n = inputStream.read(buffer, 0, want)
                         if (n < 0) break
