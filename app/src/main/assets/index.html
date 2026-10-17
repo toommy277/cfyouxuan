@@ -208,19 +208,23 @@
     .final-upload-card { padding: 8px 9px; margin-bottom: 10px; }
     .final-upload-card .card-title { margin-bottom: 6px; }
     .final-upload-hint { color: var(--muted); font-size: .75rem; margin: 0 0 8px; }
-    /* 最终上传列表与 IP 结果表一样：每个 IP 固定一行，窄屏横向滚动，不再堆成多行大卡片。 */
-    .final-upload-list { display: flex; flex-direction: column; gap: 4px; overflow-x: auto; }
-    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 24px minmax(130px, 1.5fr) 58px 60px 60px 66px 68px 44px 44px 44px; gap: 4px; align-items: center; min-width: 650px; box-sizing: border-box; }
-    .final-upload-head { padding: 0 5px 2px; color: var(--muted); font-size: .68rem; }
-    .final-upload-row { padding: 3px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel, transparent); }
+    /* 最终上传：紧凑单行，移除在左，测速按钮靠右，拖动手柄固定最右。 */
+    .final-upload-list { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
+    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 34px minmax(105px, 1.5fr) 38px 44px 44px 43px 48px 42px 42px 22px; gap: 3px; align-items: center; min-width: 500px; box-sizing: border-box; }
+    .final-upload-head { padding: 0 3px 2px; color: var(--muted); font-size: .62rem; }
+    .final-upload-row { padding: 2px 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel, transparent); }
     .final-upload-row.dragging { opacity: .45; }
     .final-upload-row.drag-over { border-color: var(--primary); }
-    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 3px 3px; font-size: .72rem; }
+    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 2px; font-size: .65rem; height: 25px; }
+    .final-upload-row input[readonly] { border-color: transparent; background: transparent; color: var(--text); cursor: pointer; }
+    .final-upload-row.editing input { border-color: var(--border); background: var(--input, var(--panel)); }
     .final-upload-row .final-ip { font-family: ui-monospace, monospace; }
-    .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; }
-    .final-upload-row button { padding: 4px 2px; min-width: 0; font-size: .65rem; white-space: nowrap; }
+    .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; font-size: .8rem; }
+    .final-upload-row button { padding: 3px 1px; min-width: 0; font-size: .6rem; white-space: nowrap; height: 25px; }
+    .final-upload-row .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; }
     .final-upload-row .final-latency-test { background: #E74C3C; border-color: #E74C3C; color: white; }
     .final-upload-row .final-speed-test { background: #2563eb; border-color: #2563eb; color: white; }
+    .final-upload-hint { font-size: .68rem; margin-bottom: 5px; }
     .final-upload-empty { padding: 12px 6px; color: var(--muted); font-size: .8rem; text-align: center; border: 1px dashed var(--border); border-radius: 7px; }
     td.num { font-variant-numeric: tabular-nums; }
     .ip { font-family: ui-monospace, monospace; font-size: 0.8rem; }
@@ -332,7 +336,7 @@
 
     <div class="card final-upload-card">
       <div class="card-title">最终上传 <span id="finalUploadCount" style="font-weight:400">（0 个）</span></div>
-      <p class="final-upload-hint">勾选 IP 后会显示在这里。可编辑 IP、端口、国家、线路、延迟和速度；拖动左侧排序柄可调整最终上传顺序。</p>
+      <p class="final-upload-hint">勾选 IP 后会显示在这里。可编辑 IP、端口、国家、线路、延迟和速度；点击字段可编辑；移除在左侧，测速按钮在右侧，拖动最右侧手柄可调整上传顺序。</p>
       <div id="finalUploadList" class="final-upload-list"><div class="final-upload-empty">请先在下方 IP 结果中勾选要上传的项目</div></div>
     </div>
 
@@ -691,23 +695,32 @@
         updateActionButtons();
         return;
       }
-      container.innerHTML = '<div class="final-upload-head"><span>排序</span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟 ms</span><span>速度 Mbps</span><span>延迟</span><span>测速</span><span>操作</span></div>' + finalItems.map((it, index) => `
+      container.innerHTML = '<div class="final-upload-head"><span>移除</span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span>延迟</span><span>测速</span><span>排序</span></div>' + finalItems.map((it, index) => `
         <div class="final-upload-row" draggable="true" data-final-key="${escapeHtml(it.sourceKey)}">
-          <div class="final-drag" title="拖动排序" aria-label="拖动排序">☰<br><small>${index + 1}</small></div>
-          <input class="final-ip" data-field="editIp" value="${escapeHtml(it.editIp)}" aria-label="上传 IP" title="IP / 域名" />
-          <input data-field="editPort" value="${escapeHtml(it.editPort)}" inputmode="numeric" aria-label="上传端口" title="端口" />
-          <input class="final-country" data-field="editCountry" value="${escapeHtml(it.editCountry)}" aria-label="上传国家" placeholder="国家" title="国家" />
-          <input class="final-route" data-field="editRoute" value="${escapeHtml(it.editRoute)}" aria-label="上传线路" placeholder="线路" title="线路" />
-          <input class="final-latency" data-field="editLatency" value="${escapeHtml(it.editLatency)}" inputmode="decimal" aria-label="上传延迟 ms" placeholder="延迟 ms" title="延迟 ms" />
-          <input class="final-speed" data-field="editSpeed" value="${escapeHtml(it.editSpeed)}" inputmode="decimal" aria-label="上传速度 Mbps" placeholder="速度 Mbps" title="速度 Mbps" />
+          <button type="button" class="final-remove" data-action="remove" title="从最终上传列表移除" aria-label="移除">× 移除</button>
+          <input class="final-ip" data-field="editIp" value="${escapeHtml(it.editIp)}" aria-label="上传 IP" title="IP / 域名" readonly />
+          <input data-field="editPort" value="${escapeHtml(it.editPort)}" inputmode="numeric" aria-label="上传端口" title="端口" readonly />
+          <input class="final-country" data-field="editCountry" value="${escapeHtml(it.editCountry)}" aria-label="上传国家" placeholder="国家" title="国家" readonly />
+          <input class="final-route" data-field="editRoute" value="${escapeHtml(it.editRoute)}" aria-label="上传线路" placeholder="线路" title="线路" readonly />
+          <input class="final-latency" data-field="editLatency" value="${escapeHtml(it.editLatency)}" inputmode="decimal" aria-label="上传延迟 ms" placeholder="—" title="延迟 ms" readonly />
+          <input class="final-speed" data-field="editSpeed" value="${escapeHtml(it.editSpeed)}" inputmode="decimal" aria-label="上传速度 Mbps" placeholder="—" title="速度 Mbps" readonly />
           <button type="button" class="final-latency-test" data-action="latency" title="测试延迟">延迟</button>
           <button type="button" class="final-speed-test" data-action="speed" title="测试速度">测速</button>
-          <button type="button" class="secondary final-remove" data-action="remove" title="从最终上传列表移除">移除</button>
+          <div class="final-drag" title="拖动排序" aria-label="拖动排序" role="button">☰</div>
         </div>`).join("");
       container.querySelectorAll(".final-upload-row").forEach(row => {
         const key = row.dataset.finalKey;
         const item = finalItems.find(entry => entry.sourceKey === key);
-        row.querySelectorAll("input[data-field]").forEach(input => input.addEventListener("input", () => {
+        row.querySelectorAll("input[data-field]").forEach(input => {
+          input.addEventListener("click", () => {
+            if (input.readOnly) {
+              row.classList.add("editing");
+              row.querySelectorAll("input[data-field]").forEach(field => field.readOnly = false);
+              input.focus();
+              input.select();
+            }
+          });
+          input.addEventListener("input", () => {
           item[input.dataset.field] = input.value;
           if (input.dataset.field === "editCountry" || input.dataset.field === "editRoute") {
             const pos = input.selectionStart;
@@ -715,7 +728,11 @@
             item[input.dataset.field] = input.value;
             try { input.setSelectionRange(pos, pos); } catch {}
           }
-        }));
+          });
+          input.addEventListener("keydown", event => {
+            if (event.key === "Enter") { input.blur(); row.classList.remove("editing"); row.querySelectorAll("input[data-field]").forEach(field => field.readOnly = true); }
+          });
+        });
         row.querySelector('[data-action="remove"]').onclick = () => {
           selected.delete(key);
           finalItems = finalItems.filter(entry => entry.sourceKey !== key);
@@ -724,6 +741,11 @@
         };
         row.querySelector('[data-action="latency"]').onclick = () => testFinalLatency(item, row);
         row.querySelector('[data-action="speed"]').onclick = () => testFinalSpeed(item);
+        row.querySelectorAll("input[data-field]").forEach(input => input.addEventListener("blur", () => {
+          if (row.contains(document.activeElement) && document.activeElement.matches("input[data-field]")) return;
+          row.classList.remove("editing");
+          row.querySelectorAll("input[data-field]").forEach(field => field.readOnly = true);
+        }));
         row.addEventListener("dragstart", event => {
           draggingFinalKey = key;
           row.classList.add("dragging");
