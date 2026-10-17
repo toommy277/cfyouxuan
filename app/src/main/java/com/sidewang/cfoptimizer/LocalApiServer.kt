@@ -8,6 +8,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URL
 import java.nio.ByteBuffer
@@ -112,74 +113,293 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         val region = (params["region"]?.firstOrNull() ?: "JP").uppercase(Locale.ROOT)
         if (!regionNames.containsKey(region)) return json(JSONObject().put("error", "不支持的地区代码"), Response.Status.BAD_REQUEST)
         val custom = params["source"]?.firstOrNull()?.trim().orEmpty()
-        val source = custom.ifBlank { "https://bestcf.pages.dev/random-region/$region/all.txt" }
+        val defaultSource = custom.isBlank()
+        val isUrlSource = custom.startsWith("https://", ignoreCase = true) || custom.startsWith("http://", ignoreCase = true)
+        val sourceLabel: String
+        val raw: String
+        if (defaultSource) {
+            sourceLabel = "https://bestcf.pages.dev/random-region/$region/all.txt"
+            raw = fetchText(sourceLabel)
+        } else if (isUrlSource) {
+            if (!custom.startsWith("https://", ignoreCase = true)) {
+                return json(JSONObject().put("error", "数据源网址必须使用 HTTPS"), Response.Status.BAD_REQUEST)
+            }
+            sourceLabel = custom
+            raw = fetchText(sourceLabel)
+        } else {
+            sourceLabel = "自定义输入"
+            raw = custom
+        }
+
+        val map = LinkedHashMap<String, JSONObject>()
+        raw.split(Regex("\\r?\\n")).forEachIndexed { i, line ->
+            parseInputLine(line, i).forEach { item ->
+                val key = "${item.optString("ip")}:${item.optInt("port")}"
+                if (!map.containsKey(key)) map[key] = item
+            }
+        }
+        val all = map.values.toList()
+        // 仅自定义输入/自定义 TXT 自动补全缺失的国家和线路；已有字段不会被覆盖。
+        if (!defaultSource && all.isNotEmpty()) detectMissingMetadata(all)
+
+        val routes = JSONArray()
+        all.map { it.optString("route") }.filter { it.isNotBlank() }.distinct().forEach { routes.put(it) }
+        val requestedRoute = (params["route"]?.firstOrNull() ?: "全部").uppercase(Locale.ROOT)
+        val items = if (requestedRoute == "全部" || requestedRoute == "ALL") all else all.filter { it.optString("route").uppercase(Locale.ROOT) == requestedRoute }
+        return json(JSONObject().put("source", sourceLabel).put("region", region).put("count", items.size).put("total", all.size).put("routes", routes).put("items", JSONArray(items)))
+    }
+
+    private fun fetchText(source: String): String {
         val parsedUrl = URL(source)
-        if (parsedUrl.protocol != "https") return json(JSONObject().put("error", "数据源必须使用 HTTPS"), Response.Status.BAD_REQUEST)
+        if (parsedUrl.protocol != "https") throw IllegalArgumentException("数据源网址必须使用 HTTPS")
         val conn = parsedUrl.openConnection() as HttpsURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
         conn.setRequestProperty("User-Agent", "PhoneCFIPTool/1.0 Android")
-        val raw = try {
+        return try {
             if (conn.responseCode !in 200..299) throw IllegalStateException("数据源返回 HTTP ${conn.responseCode}")
             conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally { conn.disconnect() }
-        val map = LinkedHashMap<String, JSONObject>()
-        raw.split(Regex("\\r?\\n")).forEachIndexed { i, line ->
-            val item = parseLine(line, i) ?: return@forEachIndexed
-            val key = "${item.optString("ip")}:${item.optInt("port")}"
-            if (!map.containsKey(key)) map[key] = item
+    }
+
+    private fun parseInputLine(line: String, index: Int): List<JSONObject> {
+        val raw = line.removePrefix("\uFEFF").trim()
+        if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("//")) return emptyList()
+        val cidr = parseCidrInput(raw, index)
+        if (cidr != null) return cidr
+        if ('/' in raw) throw IllegalArgumentException("CIDR 格式无效：$raw")
+        return listOfNotNull(parseLine(raw, index))
+    }
+
+    private fun parseCidrInput(raw: String, index: Int): List<JSONObject>? {
+        var cidrText = ""
+        var portText = ""
+        val bracketedV6 = Regex("^\\[([0-9a-fA-F:]+/\\d{1,3})](?::(\\d{1,5}))?$").find(raw)
+        val ipv4 = Regex("^((?:\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})(?::(\\d{1,5}))?$").find(raw)
+        val ipv6 = Regex("^([0-9a-fA-F:]+/\\d{1,3})$").find(raw)
+        when {
+            bracketedV6 != null -> { cidrText = bracketedV6.groupValues[1]; portText = bracketedV6.groupValues[2] }
+            ipv4 != null -> { cidrText = ipv4.groupValues[1]; portText = ipv4.groupValues[2] }
+            ipv6 != null -> { cidrText = ipv6.groupValues[1] }
+            else -> return null
         }
-        val all = map.values.toList()
-        val routes = JSONArray()
-        all.map { it.optString("route", "none") }.distinct().forEach { routes.put(it) }
-        val requestedRoute = (params["route"]?.firstOrNull() ?: "全部").uppercase(Locale.ROOT)
-        val items = if (requestedRoute == "全部" || requestedRoute == "ALL") all else all.filter { it.optString("route").uppercase(Locale.ROOT) == requestedRoute }
-        return json(JSONObject().put("source", source).put("region", region).put("count", items.size).put("total", all.size).put("routes", routes).put("items", JSONArray(items)))
+        val port = if (portText.isBlank()) 443 else portText.toIntOrNull()?.takeIf { it in 1..65535 }
+            ?: throw IllegalArgumentException("CIDR 端口无效：$raw")
+        val parts = cidrText.split('/')
+        if (parts.size != 2) throw IllegalArgumentException("CIDR 格式无效：$raw")
+        val address = parts[0]
+        val bytes = try {
+            if (address.contains(':')) {
+                if (InetAddress.getByName(address) !is java.net.Inet6Address) throw IllegalArgumentException("IPv6 地址无效")
+                InetAddress.getByName(address).address
+            } else {
+                if (!validIp(address)) throw IllegalArgumentException("IPv4 地址无效")
+                address.split('.').map { it.toInt().toByte() }.toByteArray()
+            }
+        } catch (e: Exception) { throw IllegalArgumentException("CIDR 地址无效：$raw") }
+        val bits = bytes.size * 8
+        val prefix = parts[1].toIntOrNull()?.takeIf { it in 0..bits }
+            ?: throw IllegalArgumentException("CIDR 前缀长度无效：$raw")
+        val hostBits = bits - prefix
+        val base = java.math.BigInteger(1, bytes)
+        val hostRange = java.math.BigInteger.ONE.shiftLeft(hostBits)
+        val network = if (hostBits == 0) base else base.divide(hostRange).multiply(hostRange)
+        val count = if (hostRange <= java.math.BigInteger.valueOf(512)) hostRange.toInt() else 512
+        val offsets = if (hostRange <= java.math.BigInteger.valueOf(512)) {
+            (0 until count).map { java.math.BigInteger.valueOf(it.toLong()) }
+        } else {
+            val random = SecureRandom()
+            val picked = LinkedHashSet<java.math.BigInteger>()
+            while (picked.size < 512) {
+                val value = java.math.BigInteger(hostBits.coerceAtLeast(1), random)
+                if (value < hostRange) picked.add(value)
+            }
+            picked.toList()
+        }
+        return offsets.mapIndexed { offsetIndex, offset ->
+            val value = network.add(offset)
+            val rawBytes = value.toByteArray()
+            val normalized = ByteArray(bytes.size)
+            val sourceStart = (rawBytes.size - normalized.size).coerceAtLeast(0)
+            val copyLength = minOf(rawBytes.size, normalized.size)
+            System.arraycopy(rawBytes, sourceStart, normalized, normalized.size - copyLength, copyLength)
+            val ip = InetAddress.getByAddress(normalized).hostAddress.substringBefore('%')
+            JSONObject().put("id", "$ip:$port:${index}_$offsetIndex").put("ip", ip).put("port", port)
+                .put("label", "").put("route", "").put("country", "").put("original", raw)
+                .put("latencyMs", JSONObject.NULL).put("speedMbps", JSONObject.NULL).put("speedError", JSONObject.NULL).put("speedStatus", "")
+        }
     }
 
     private fun parseLine(line: String, index: Int): JSONObject? {
         val raw = line.removePrefix("\uFEFF").trim()
         if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("//")) return null
-        val m = Regex("^\\s*(\\[[0-9a-fA-F:]+]|(?:\\d{1,3}\\.){3}\\d{1,3})(?::(\\d{1,5}))?(.*)$").find(raw) ?: return null
-        val ip = m.groupValues[1].removePrefix("[").removeSuffix("]")
-        if (!validIp(ip)) return null
-        val port = m.groupValues[2].ifBlank { "443" }.toIntOrNull() ?: return null
+        val bracketed = Regex("^\\[([0-9a-fA-F:.%]+)](?::(\\d{1,5}))?(.*)$").find(raw)
+        val ipv4 = Regex("^((?:\\d{1,3}\\.){3}\\d{1,3})(?::(\\d{1,5}))?(.*)$").find(raw)
+        val domain = Regex("^([A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::(\\d{1,5}))?(.*)$").find(raw)
+        val bareV6 = raw.takeWhile { !it.isWhitespace() && it !in ",;|#" }
+        val ip: String
+        val portText: String
+        val suffix: String
+        when {
+            bracketed != null -> {
+                ip = bracketed.groupValues[1]
+                portText = bracketed.groupValues[2]
+                suffix = bracketed.groupValues[3]
+            }
+            ipv4 != null -> {
+                ip = ipv4.groupValues[1]
+                portText = ipv4.groupValues[2]
+                suffix = ipv4.groupValues[3]
+            }
+            bareV6.contains(':') && validIp(bareV6) -> {
+                ip = bareV6
+                portText = ""
+                suffix = raw.removePrefix(bareV6)
+            }
+            domain != null -> {
+                ip = domain.groupValues[1]
+                portText = domain.groupValues[2]
+                suffix = domain.groupValues[3]
+            }
+            else -> return null
+        }
+        if (!validHost(ip)) return null
+        val port = portText.ifBlank { "443" }.toIntOrNull() ?: return null
         if (port !in 1..65535) return null
-        val suffix = m.groupValues[3].trim()
-        val hash = suffix.indexOf('#')
-        val fieldsText = (if (hash >= 0) suffix.substring(0, hash) else suffix).trim()
-        val label = (if (hash >= 0) suffix.substring(hash + 1) else fieldsText).trim()
+        val cleanSuffix = suffix.trim()
+        val hash = cleanSuffix.indexOf('#')
+        val fieldsText = (if (hash >= 0) cleanSuffix.substring(0, hash) else cleanSuffix).trim()
+        val label = (if (hash >= 0) cleanSuffix.substring(hash + 1) else fieldsText).trim()
         val fields = fieldsText.split(Regex("[\\t,;| ]+")).filter { it.isNotBlank() }
         var route = fields.firstOrNull { it.uppercase(Locale.ROOT) in routeCodes }?.uppercase(Locale.ROOT) ?: ""
         if (route.isBlank()) {
-            route = Regex("(?:^|[^A-Za-z0-9])(NRT|KIX|HND|HKG|SIN|TPE|ICN|LAX|SJC|FRA|AMS|LHR|CDG|ORD|IAD|SEA|DFW|MEL|SYD)(?:$|[^A-Za-z0-9])", RegexOption.IGNORE_CASE).find(label)?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: ""
-        }
-        if (route.isBlank()) {
-            val pipeParts = label.split('|').map { it.trim() }
-            if (pipeParts.size >= 3 && pipeParts[1].matches(Regex("[A-Za-z]{2}"))) {
-                val candidate = pipeParts[2]
-                if (candidate.isNotBlank() && !candidate.contains(Regex("\\d{1,5}ms|Mbps|\\d+\\.\\d+" , RegexOption.IGNORE_CASE))) route = candidate
-            }
+            route = Regex("(?:^|[^A-Za-z0-9])([A-Z]{3})(?:$|[^A-Za-z0-9])", RegexOption.IGNORE_CASE).find(label)?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: ""
         }
         val country = detectCountry(raw).ifBlank { "" }
         return JSONObject().put("id", "$ip:$port:$index").put("ip", ip).put("port", port)
-            .put("label", label.ifBlank { fieldsText }).put("route", route.ifBlank { "none" }).put("country", country).put("original", raw)
+            .put("label", label.ifBlank { fieldsText }).put("route", route).put("country", country).put("original", raw)
             .put("latencyMs", JSONObject.NULL).put("speedMbps", JSONObject.NULL).put("speedError", JSONObject.NULL).put("speedStatus", "")
     }
 
+    private fun detectMissingMetadata(items: List<JSONObject>) {
+        // 若线路已存在，可以可靠地从已知机房映射补国家；不会覆盖数据源原有国家。
+        items.forEach { item ->
+            if (item.optString("country").isBlank()) countryForColo(item.optString("route")).takeIf { it.isNotBlank() }?.let { item.put("country", it) }
+        }
+        val pending = items.filter { item -> item.optString("country").isBlank() || item.optString("route").isBlank() || item.optString("route").equals("none", ignoreCase = true) }
+        if (pending.isEmpty()) return
+        val next = AtomicInteger(0)
+        val workers = (0 until minOf(32, pending.size)).map {
+            Thread {
+                while (true) {
+                    val i = next.getAndIncrement()
+                    if (i >= pending.size) break
+                    val item = pending[i]
+                    val colo = detectColo(item) ?: continue
+                    if (item.optString("route").isBlank() || item.optString("route").equals("none", ignoreCase = true)) item.put("route", colo)
+                    if (item.optString("country").isBlank()) countryForColo(colo).takeIf { it.isNotBlank() }?.let { item.put("country", it) }
+                }
+            }.apply { isDaemon = true; start() }
+        }
+        workers.forEach { it.join() }
+    }
+
+    private fun detectColo(item: JSONObject): String? {
+        val host = item.optString("ip").trim()
+        val port = item.optInt("port", 443)
+        if (!validHost(host)) return null
+        // IP 地址通过 Cloudflare 的主机名握手并把 TCP 连接固定到该 IP；域名则保留其自身 SNI。
+        val sniHost = if (validIp(host)) "www.cloudflare.com" else host
+        return try {
+            val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
+            socket.soTimeout = 1200
+            socket.connect(InetSocketAddress(host, port), 1000)
+            socket.use { ssl ->
+                val params = ssl.sslParameters
+                params.serverNames = listOf(SNIHostName(sniHost))
+                ssl.sslParameters = params
+                ssl.startHandshake()
+                if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(sniHost, ssl.session)) return null
+                val out = BufferedOutputStream(ssl.outputStream)
+                out.write(("GET /cdn-cgi/trace HTTP/1.1\r\nHost: $sniHost\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: text/plain\r\n\r\n").toByteArray(Charsets.US_ASCII))
+                out.flush()
+                val input = BufferedInputStream(ssl.inputStream)
+                val statusLine = readHttpLine(input) ?: return null
+                val status = Regex("HTTP/\\d\\.\\d\\s+(\\d+)").find(statusLine)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+                if (status !in 200..299) return null
+                var headerBytes = 0
+                while (true) {
+                    val line = readHttpLine(input) ?: return null
+                    headerBytes += line.length
+                    if (headerBytes > 16384) return null
+                    if (line.isEmpty()) break
+                }
+                val body = ByteArrayOutputStream()
+                val buffer = ByteArray(1024)
+                while (body.size() < 8192) {
+                    val n = input.read(buffer, 0, minOf(buffer.size, 8192 - body.size()))
+                    if (n <= 0) break
+                    body.write(buffer, 0, n)
+                }
+                Regex("(?m)^colo=([A-Z]{3})\\s*$").find(body.toString("UTF-8"))?.groupValues?.get(1)
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun countryForColo(colo: String): String = when (colo.uppercase(Locale.ROOT)) {
+        "NRT", "KIX", "HND" -> "JP"
+        "HKG" -> "HK"
+        "SIN" -> "SG"
+        "TPE" -> "TW"
+        "ICN" -> "KR"
+        "LAX", "SJC", "ORD", "IAD", "SEA", "DFW", "ATL", "MIA", "BOS", "DEN", "PHX", "PDX", "SLC", "EWR", "MSP", "MCI", "IAH", "CLT", "DTW", "BWI", "LAS", "SAN", "SNA", "AUS", "RDU", "CLE", "PIT", "CMH", "IND", "BNA", "SAT", "OKC", "ABQ", "BUF", "RIC", "JAX", "ORF", "TPA", "MCO", "FLL", "PBI", "RSW", "CHS", "SAV", "GSP", "PWM", "BTV", "ALB", "SYR", "ROC", "GRR", "FNT", "TUL", "LIT", "SHV", "LBB", "AMA", "MAF", "ELP", "TUS", "YUM", "FAT", "RNO", "BOI", "GEG", "BIL", "FSD", "OMA", "DSM", "CID", "PIA", "EVV", "LEX", "SDF", "DAY", "CAK", "ERI", "AVP", "ITH", "MHT", "BDL", "HVN", "ACK", "MVY" -> "US"
+        "FRA", "MUC", "DUS", "HAM", "BER", "STR", "NUE", "LEJ", "HAJ", "CGN" -> "DE"
+        "AMS" -> "NL"
+        "LHR", "MAN", "EDI", "GLA", "BHX", "BRS" -> "GB"
+        "CDG", "ORY", "MRS", "LYS", "TLS", "NCE", "BOD", "NTE", "LIL", "MPL" -> "FR"
+        "MEL", "SYD", "BNE", "PER", "ADL", "CBR" -> "AU"
+        "YYZ", "YUL", "YVR", "YOW", "YYC", "YEG", "YHZ", "YWG" -> "CA"
+        "MAD", "BCN", "VLC", "AGP", "BIO", "SVQ" -> "ES"
+        "FCO", "MXP", "LIN", "VCE", "NAP", "BLQ" -> "IT"
+        "ZRH", "GVA", "BSL" -> "CH"
+        "VIE" -> "AT"
+        "BRU" -> "BE"
+        "CPH", "BLL" -> "DK"
+        "ARN", "GOT", "MMX" -> "SE"
+        "OSL", "BGO", "TRD" -> "NO"
+        "HEL" -> "FI"
+        "WAW", "KRK", "KTW" -> "PL"
+        "PRG", "BRQ" -> "CZ"
+        "BUD" -> "HU"
+        "OTP" -> "RO"
+        "ATH", "SKG" -> "GR"
+        "IST", "SAW" -> "TR"
+        "DXB", "AUH" -> "AE"
+        "JNB", "CPT", "DUR" -> "ZA"
+        "GRU", "GIG", "POA", "BSB" -> "BR"
+        "EZE", "COR" -> "AR"
+        "MEX", "GDL", "MTY", "QRO" -> "MX"
+        "DEL", "BOM", "BLR", "MAA", "HYD", "CCU" -> "IN"
+        "BKK" -> "TH"
+        "KUL" -> "MY"
+        "CGK" -> "ID"
+        "MNL" -> "PH"
+        "HAN", "SGN", "DAD" -> "VN"
+        "AKL", "WLG", "CHC" -> "NZ"
+        else -> ""
+    }
+
     private fun detectCountry(raw: String): String {
-        val known = regionNames.keys
         val afterHash = raw.substringAfter('#', "")
         val pipeParts = afterHash.split('|').map { it.trim() }
-        // 标准订阅格式中，#自选 后的第二段就是国家码。
         if (pipeParts.size >= 2) {
             val candidate = pipeParts[1].uppercase(Locale.ROOT)
             if (candidate.matches(Regex("[A-Z]{2}")) && candidate !in routeCodes) return candidate
         }
-        // 优先识别程序已知国家码；自定义 TXT 中其他两位国家码也保留。
-        val tokens = Regex("[A-Za-z]{2}").findAll(raw).map { it.value.uppercase(Locale.ROOT) }.toList()
-        tokens.firstOrNull { it in known }?.let { return it }
-        val excluded = routeCodes + setOf("CF", "IP", "MS", "MB", "GBPS", "MS")
+        val tokens = raw.substringAfter('#', raw).split(Regex("[,;|\\s]+"))
+            .map { it.trim().uppercase(Locale.ROOT) }
+            .filter { it.matches(Regex("[A-Z]{2}")) }
+        val excluded = routeCodes + setOf("CF", "IP", "MS", "MB", "GBPS", "HTTP", "HTTPS")
         return tokens.firstOrNull { it !in excluded } ?: ""
     }
 
@@ -459,7 +679,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         if (route.endsWith(ipPort)) route = route.removeSuffix(ipPort).trim()
         if (route.isBlank() || route == ipPort) {
             val allTokens = Regex("[A-Za-z]{2,4}").findAll(tail).map { it.value.uppercase(Locale.ROOT) }.toList()
-            route = allTokens.firstOrNull { it in routeCodes } ?: "none"
+            route = allTokens.firstOrNull { it in routeCodes } ?: ""
         }
         if (country == "自选" || country == ipPort || !country.matches(Regex("[A-Z]{2}"))) country = ""
         if (metrics.contains(ipPort)) metrics = metrics.substringBefore(ipPort).trim()
