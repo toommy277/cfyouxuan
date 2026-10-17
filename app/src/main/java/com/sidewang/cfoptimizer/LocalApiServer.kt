@@ -33,12 +33,6 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
     )
     private val routeCodes = setOf("NRT", "KIX", "HND", "HKG", "SIN", "TPE", "ICN", "LAX", "SJC", "FRA", "AMS", "LHR", "CDG", "ORD", "IAD", "SEA", "DFW", "MEL", "SYD")
 
-    // 测速
-    private val minSpeedIntervalMs = 1500L
-    private val speedReadWindowMs = 6000L
-    private val speedQueueLock = Any()
-    private var nextSpeedAllowedAt = 0L
-
     override fun serve(session: IHTTPSession): Response {
         return try {
             when {
@@ -295,7 +289,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         val pending = items.filter { item -> item.optString("country").isBlank() || item.optString("route").isBlank() || item.optString("route").equals("none", ignoreCase = true) }
         if (pending.isEmpty()) return
         val next = AtomicInteger(0)
-        val workers = (0 until minOf(8, pending.size)).map {
+        val workers = (0 until minOf(32, pending.size)).map {
             Thread {
                 while (true) {
                     val i = next.getAndIncrement()
@@ -472,151 +466,88 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
     private fun speed(input: JSONObject): Response {
         val item = input.optJSONObject("item")
         if (item == null || !validItem(item)) return json(JSONObject().put("error", "IP 或端口无效"), Response.Status.BAD_REQUEST)
-
         val pipeIn = java.io.PipedInputStream(64 * 1024)
         val pipeOut = java.io.PipedOutputStream(pipeIn)
-        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
-        val activeSocket = java.util.concurrent.atomic.AtomicReference<SSLSocket?>(null)
-
         Thread {
             val writer = BufferedOutputStream(pipeOut)
-            fun emit(data: JSONObject): Boolean {
-                if (cancelled.get()) return false
-                return try {
-                    writer.write(("data: " + data.toString() + "\n\n").toByteArray(Charsets.UTF_8))
-                    writer.flush()
-                    true
-                } catch (_: Exception) {
-                    cancelled.set(true)
-                    try { activeSocket.getAndSet(null)?.close() } catch (_: Exception) {}
-                    false
-                }
+            fun emit(data: JSONObject) {
+                try { writer.write(("data: " + data.toString() + "\n\n").toByteArray(Charsets.UTF_8)); writer.flush() } catch (_: Exception) {}
             }
-
+            val start = System.currentTimeMillis()
             var received = 0L
-            var start = System.currentTimeMillis()
             try {
-                // 排队：两次实际开测至少间隔 1.5s；前端可连点，只延后执行，不返回错误
-                val delayMs = synchronized(speedQueueLock) {
-                    val now = System.currentTimeMillis()
-                    val startAt = maxOf(now, nextSpeedAllowedAt)
-                    nextSpeedAllowedAt = startAt + minSpeedIntervalMs
-                    startAt - now
-                }
-                if (delayMs > 0L) Thread.sleep(delayMs)
-                if (cancelled.get() || Thread.currentThread().isInterrupted) throw InterruptedException("测速已取消")
-
-                start = System.currentTimeMillis()
-                val deadlineAt = start + 8000L // 整次测速网络阶段的硬截止时间（包含连接、TLS、响应头和读取）
-                fun setRemainingTimeout(socket: SSLSocket) {
-                    val remaining = deadlineAt - System.currentTimeMillis()
-                    if (remaining <= 0L) throw java.net.SocketTimeoutException("测速总超时（8秒）")
-                    socket.soTimeout = remaining.coerceAtMost(10000L).toInt().coerceAtLeast(1)
-                }
-
                 val ip = item.getString("ip")
                 val port = item.getInt("port")
                 val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
-                activeSocket.set(socket)
-                try {
-                    socket.connect(InetSocketAddress(ip, port), 5000)
-                    setRemainingTimeout(socket)
-                    val params: SSLParameters = socket.sslParameters
-                    params.serverNames = listOf(SNIHostName("speed.cloudflare.com"))
-                    socket.sslParameters = params
-                    socket.startHandshake()
-                    setRemainingTimeout(socket)
-                    if (!HttpsURLConnection.getDefaultHostnameVerifier().verify("speed.cloudflare.com", socket.session)) {
-                        throw IllegalStateException("TLS 证书主机名验证失败")
-                    }
-                    val out = BufferedOutputStream(socket.getOutputStream())
-                    out.write(("GET /__down?bytes=10000000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: */*\r\n\r\n").toByteArray(Charsets.US_ASCII))
-                    out.flush()
-                    val inputStream = BufferedInputStream(socket.getInputStream())
-                    setRemainingTimeout(socket)
-                    val statusLine = readHttpLine(inputStream, socket, deadlineAt) ?: throw IllegalStateException("测速端点无响应")
-                    val status = Regex("HTTP/\\d\\.\\d\\s+(\\d+)").find(statusLine)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                    val headers = HashMap<String, String>()
-                    while (true) {
-                        setRemainingTimeout(socket)
-                        val line = readHttpLine(inputStream, socket, deadlineAt) ?: break
-                        if (line.isEmpty()) break
-                        val idx = line.indexOf(':')
-                        if (idx > 0) headers[line.substring(0, idx).trim().lowercase(Locale.ROOT)] = line.substring(idx + 1).trim()
-                    }
-                    if (status !in 200..299) throw IllegalStateException("测速端点返回 HTTP $status")
-
-                    val startRead = System.currentTimeMillis()
-                    val readDeadline = minOf(startRead + speedReadWindowMs, deadlineAt)
-                    var lastTime = startRead
-                    var lastBytes = 0L
-                    val chunked = headers["transfer-encoding"]?.contains("chunked", true) == true
-                    val length = headers["content-length"]?.toLongOrNull()
-                    val buffer = ByteArray(16 * 1024)
-                    fun updateReadTimeout() {
-                        if (cancelled.get()) throw InterruptedException("测速已取消")
-                        val remaining = minOf(readDeadline, deadlineAt) - System.currentTimeMillis()
-                        if (remaining <= 0L) throw java.net.SocketTimeoutException("测速读取窗口结束")
-                        socket.soTimeout = remaining.coerceAtMost(10000L).toInt().coerceAtLeast(1)
-                    }
-                    if (chunked) {
-                        while (System.currentTimeMillis() < readDeadline) {
-                            updateReadTimeout()
-                            val line = readHttpLine(inputStream, socket, readDeadline) ?: break
-                            val size = line.substringBefore(';').trim().toLongOrNull(16) ?: break
-                            if (size <= 0) { updateReadTimeout(); readHttpLine(inputStream, socket, readDeadline); break }
-                            var remain = size
-                            while (remain > 0 && System.currentTimeMillis() < readDeadline) {
-                                updateReadTimeout()
-                                val n = inputStream.read(buffer, 0, minOf(buffer.size.toLong(), remain).toInt())
-                                if (n <= 0) throw IllegalStateException("测速连接中断")
-                                received += n
-                                remain -= n
-                                val now = System.currentTimeMillis()
-                                if (now - lastTime >= 250) {
-                                    if (!emit(progress(received, now - start, received - lastBytes, now - lastTime))) throw InterruptedException("测速已取消")
-                                    lastBytes = received
-                                    lastTime = now
-                                }
-                            }
-                            if (remain > 0) break
-                            updateReadTimeout()
-                            readHttpLine(inputStream)
-                        }
-                    } else {
-                        while (System.currentTimeMillis() < readDeadline && (length == null || received < length)) {
-                            updateReadTimeout()
-                            val want = if (length == null) buffer.size else minOf(buffer.size.toLong(), length - received).toInt()
-                            val n = inputStream.read(buffer, 0, want)
-                            if (n < 0) break
-                            received += n
+                socket.soTimeout = 10000
+                socket.connect(InetSocketAddress(ip, port), 5000)
+                val params: SSLParameters = socket.sslParameters
+                params.serverNames = listOf(SNIHostName("speed.cloudflare.com"))
+                socket.sslParameters = params
+                socket.startHandshake()
+                if (!HttpsURLConnection.getDefaultHostnameVerifier().verify("speed.cloudflare.com", socket.session)) {
+                    socket.close(); throw IllegalStateException("TLS 证书主机名验证失败")
+                }
+                val out = BufferedOutputStream(socket.getOutputStream())
+                out.write(("GET /__down?bytes=10000000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: */*\r\n\r\n").toByteArray(Charsets.US_ASCII)); out.flush()
+                val inputStream = BufferedInputStream(socket.getInputStream())
+                val statusLine = readHttpLine(inputStream) ?: throw IllegalStateException("测速端点无响应")
+                val status = Regex("HTTP/\\d\\.\\d\\s+(\\d+)").find(statusLine)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val headers = HashMap<String, String>()
+                while (true) {
+                    val line = readHttpLine(inputStream) ?: break
+                    if (line.isEmpty()) break
+                    val idx = line.indexOf(':')
+                    if (idx > 0) headers[line.substring(0, idx).trim().lowercase(Locale.ROOT)] = line.substring(idx + 1).trim()
+                }
+                if (status !in 200..299) { socket.close(); throw IllegalStateException("测速端点返回 HTTP $status") }
+                val startRead = System.currentTimeMillis()
+                var lastTime = startRead
+                var lastBytes = 0L
+                val chunked = headers["transfer-encoding"]?.contains("chunked", true) == true
+                val length = headers["content-length"]?.toLongOrNull()
+                if (chunked) {
+                    while (System.currentTimeMillis() - startRead < 10000) {
+                        val line = readHttpLine(inputStream) ?: break
+                        val size = line.substringBefore(';').trim().toLongOrNull(16) ?: break
+                        if (size <= 0) { readHttpLine(inputStream); break }
+                        var remain = size
+                        val buffer = ByteArray(16 * 1024)
+                        while (remain > 0) {
+                            val n = inputStream.read(buffer, 0, minOf(buffer.size.toLong(), remain).toInt())
+                            if (n <= 0) throw IllegalStateException("测速连接中断")
+                            received += n; remain -= n
                             val now = System.currentTimeMillis()
                             if (now - lastTime >= 250) {
-                                if (!emit(progress(received, now - start, received - lastBytes, now - lastTime))) throw InterruptedException("测速已取消")
-                                lastBytes = received
-                                lastTime = now
+                                emit(progress(received, now - start, received - lastBytes, now - lastTime))
+                                lastBytes = received; lastTime = now
                             }
                         }
+                        readHttpLine(inputStream)
+                        if (received >= 10_000_000L) break
                     }
-                } finally {
-                    try { activeSocket.getAndSet(null)?.close() } catch (_: Exception) {}
+                } else {
+                    val buffer = ByteArray(16 * 1024)
+                    while (System.currentTimeMillis() - startRead < 10000 && (length == null || received < length)) {
+                        val want = if (length == null) buffer.size else minOf(buffer.size.toLong(), length - received).toInt()
+                        val n = inputStream.read(buffer, 0, want)
+                        if (n < 0) break
+                        received += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastTime >= 250) {
+                            emit(progress(received, now - start, received - lastBytes, now - lastTime))
+                            lastBytes = received; lastTime = now
+                        }
+                    }
                 }
-
-                if (!cancelled.get()) {
-                    val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1)
-                    emit(JSONObject().put("type", "done").put("ok", received > 0).put("error", if (received > 0) JSONObject.NULL else "未接收到测速数据").put("receivedBytes", received).put("elapsedMs", elapsed).put("avgMbps", received * 8.0 / elapsed / 1000.0))
-                }
+                socket.close()
+                val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1)
+                emit(JSONObject().put("type", "done").put("ok", received > 0).put("error", if (received > 0) JSONObject.NULL else "未接收到测速数据").put("receivedBytes", received).put("elapsedMs", elapsed).put("avgMbps", received * 8.0 / elapsed / 1000.0))
             } catch (e: Exception) {
-                if (!cancelled.get()) {
-                    val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1)
-                    emit(JSONObject().put("type", "done").put("ok", false).put("error", e.message ?: "测速失败").put("receivedBytes", received).put("elapsedMs", elapsed).put("avgMbps", if (received > 0) received * 8.0 / elapsed / 1000.0 else 0))
-                }
-            } finally {
-                try { activeSocket.getAndSet(null)?.close() } catch (_: Exception) {}
-                try { writer.close() } catch (_: Exception) {}
-            }
+                val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1)
+                emit(JSONObject().put("type", "done").put("ok", false).put("error", e.message ?: "测速失败").put("receivedBytes", received).put("elapsedMs", elapsed).put("avgMbps", if (received > 0) received * 8.0 / elapsed / 1000.0 else 0))
+            } finally { try { writer.close() } catch (_: Exception) {} }
         }.apply { isDaemon = true; start() }
-
         return newChunkedResponse(Response.Status.OK, "text/event-stream; charset=utf-8", pipeIn).apply {
             addHeader("Cache-Control", "no-cache, no-transform")
             addHeader("X-Accel-Buffering", "no")
@@ -628,15 +559,10 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         .put("currentMbps", deltaBytes * 8.0 / deltaMs.coerceAtLeast(1) / 1000.0)
         .put("avgMbps", bytes * 8.0 / elapsed.coerceAtLeast(1) / 1000.0).put("elapsedMs", elapsed)
 
-    private fun readHttpLine(input: InputStream, deadlineSocket: SSLSocket? = null, deadlineAt: Long? = null): String? {
+    private fun readHttpLine(input: InputStream): String? {
         val out = ByteArrayOutputStream()
         var previous = -1
         while (out.size() < 16384) {
-            if (deadlineSocket != null && deadlineAt != null) {
-                val remaining = deadlineAt - System.currentTimeMillis()
-                if (remaining <= 0L) throw java.net.SocketTimeoutException("测速截止时间已到")
-                deadlineSocket.soTimeout = remaining.coerceAtMost(10000L).toInt().coerceAtLeast(1)
-            }
             val b = input.read()
             if (b < 0) return if (out.size() == 0) null else out.toString("US-ASCII")
             if (previous == 13 && b == 10) {
