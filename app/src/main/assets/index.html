@@ -210,7 +210,7 @@
     .final-upload-hint { display: none; }
     /* 最终上传：紧凑单行，移除在左，测速按钮靠右，拖动手柄固定最右。 */
     .final-upload-list { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
-    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 28px minmax(105px, 1.5fr) 38px 44px 36px 32px 35px 42px 42px 22px; gap: 3px; align-items: center; min-width: 440px; box-sizing: border-box; }
+    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 24px 120px 34px 24px 32px 30px 32px 38px 38px 20px; gap: 2px; align-items: center; min-width: 410px; box-sizing: border-box; }
     .final-upload-head { padding: 0 3px 2px; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
     .final-upload-row { padding: 2px 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel, transparent); }
     .final-upload-row.dragging { opacity: .45; }
@@ -218,7 +218,7 @@
     .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 2px; font-size: .8rem; height: 25px; }
     .final-upload-row input[readonly] { border-color: transparent; background: transparent; color: var(--text); cursor: pointer; }
     .final-upload-row.editing input { border-color: var(--border); background: var(--input, var(--panel)); }
-    .final-upload-row .final-ip { font-family: ui-monospace, monospace; }
+    .final-upload-row .final-ip { font-family: ui-monospace, monospace; white-space: nowrap; }
     .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; font-size: .8rem; }
     .final-upload-row button { padding: 3px 1px; min-width: 0; font-size: .6rem; white-space: nowrap; height: 25px; }
     .final-upload-row .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; padding: 0; width: 24px; min-width: 24px; height: 22px; font-size: 1.15rem; line-height: 1; font-weight: 700; border-radius: 4px; }
