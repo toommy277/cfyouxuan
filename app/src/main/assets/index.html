@@ -208,26 +208,20 @@
     .final-upload-card { padding: 8px 9px; margin-bottom: 10px; }
     .final-upload-card .card-title { margin-bottom: 6px; }
     .final-upload-hint { color: var(--muted); font-size: .75rem; margin: 0 0 8px; }
-    .final-upload-list { display: flex; flex-direction: column; gap: 6px; }
-    .final-upload-head { display: grid; grid-template-columns: 24px minmax(100px, 1.5fr) 58px 54px 62px 72px 74px 46px 46px 48px; gap: 5px; align-items: center; padding: 0 6px 2px; color: var(--muted); font-size: .68rem; }
-    .final-upload-row { display: grid; grid-template-columns: 24px minmax(100px, 1.5fr) 58px 54px 62px 72px 74px 46px 46px 48px; gap: 5px; align-items: center; padding: 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel, transparent); }
+    /* 最终上传列表与 IP 结果表一样：每个 IP 固定一行，窄屏横向滚动，不再堆成多行大卡片。 */
+    .final-upload-list { display: flex; flex-direction: column; gap: 4px; overflow-x: auto; }
+    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 24px minmax(130px, 1.5fr) 58px 60px 60px 66px 68px 44px 44px 44px; gap: 4px; align-items: center; min-width: 650px; box-sizing: border-box; }
+    .final-upload-head { padding: 0 5px 2px; color: var(--muted); font-size: .68rem; }
+    .final-upload-row { padding: 3px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel, transparent); }
     .final-upload-row.dragging { opacity: .45; }
     .final-upload-row.drag-over { border-color: var(--primary); }
-    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 4px; font-size: .75rem; }
+    .final-upload-row input { width: 100%; min-width: 0; box-sizing: border-box; padding: 3px 3px; font-size: .72rem; }
     .final-upload-row .final-ip { font-family: ui-monospace, monospace; }
     .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; }
-    .final-upload-row button { padding: 5px 3px; min-width: 0; font-size: .7rem; }
+    .final-upload-row button { padding: 4px 2px; min-width: 0; font-size: .65rem; white-space: nowrap; }
     .final-upload-row .final-latency-test { background: #E74C3C; border-color: #E74C3C; color: white; }
     .final-upload-row .final-speed-test { background: #2563eb; border-color: #2563eb; color: white; }
     .final-upload-empty { padding: 12px 6px; color: var(--muted); font-size: .8rem; text-align: center; border: 1px dashed var(--border); border-radius: 7px; }
-    @media (max-width: 620px) {
-      .final-upload-head { display: none; }
-      .final-upload-row { grid-template-columns: 22px minmax(95px, 1fr) 52px 48px; }
-      .final-upload-row .final-country, .final-upload-row .final-route { grid-row: 2; }
-      .final-upload-row .final-latency, .final-upload-row .final-speed { grid-row: 3; }
-      .final-upload-row .final-latency-test, .final-upload-row .final-speed-test, .final-upload-row .final-remove { grid-row: 4; }
-      .final-upload-row .final-ip { grid-column: 2 / 4; }
-    }
     td.num { font-variant-numeric: tabular-nums; }
     .ip { font-family: ui-monospace, monospace; font-size: 0.8rem; }
     .badge {
