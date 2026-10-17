@@ -948,12 +948,10 @@
       item.speedMbps = null;
       updateItemSpeedView(item);
       const controller = new AbortController();
-      let reader = null;
       let timedOut = false;
       let gotDone = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        try { reader?.cancel("测速前端超时"); } catch {}
         controller.abort();
         item.speedStatus = "";
         item.speedError = "测速超时（10秒）";
@@ -969,7 +967,7 @@
           throw new Error(detail.error || "测速失败");
         }
         if (!res.body) throw new Error("浏览器不支持流式测速");
-        reader = res.body.getReader();
+        const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         const handlePart = part => {
@@ -1017,10 +1015,6 @@
         }
       } finally {
         clearTimeout(timer);
-        // 如果前端提前结束读取，主动取消流；后端仍需依靠 Socket 截止时间完成兜底清理。
-        if (reader && !gotDone) {
-          try { await reader.cancel("测速读取结束"); } catch {}
-        }
         if (speedSortDirection) {
           const dir = speedSortDirection === "desc" ? -1 : 1;
           allItems.sort((a, b) => {
