@@ -33,7 +33,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
     )
     private val routeCodes = setOf("NRT", "KIX", "HND", "HKG", "SIN", "TPE", "ICN", "LAX", "SJC", "FRA", "AMS", "LHR", "CDG", "ORD", "IAD", "SEA", "DFW", "MEL", "SYD")
 
-    // 测速：单次有效下载窗口约 6s（对齐 CFData）；多次请求在后端按 1.5s 间隔排队，连点不报错
+    // 测速
     private val minSpeedIntervalMs = 1500L
     private val speedReadWindowMs = 6000L
     private val speedQueueLock = Any()
