@@ -210,8 +210,8 @@
     .final-upload-hint { display: none; }
     /* 最终上传：紧凑单行，移除在左，测速按钮靠右，拖动手柄固定最右。 */
     .final-upload-list { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
-    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 34px minmax(105px, 1.5fr) 38px 22px 26px 26px 29px 42px 42px 22px; gap: 3px; align-items: center; min-width: 424px; box-sizing: border-box; }
-    .final-upload-head { padding: 0 3px 2px; color: var(--muted); font-size: .62rem; }
+    .final-upload-head, .final-upload-row { display: grid; grid-template-columns: 28px minmax(105px, 1.5fr) 38px 44px 36px 32px 35px 42px 42px 22px; gap: 3px; align-items: center; min-width: 440px; box-sizing: border-box; }
+    .final-upload-head { padding: 0 3px 2px; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
     .final-upload-row { padding: 2px 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel, transparent); }
     .final-upload-row.dragging { opacity: .45; }
     .final-upload-row.drag-over { border-color: var(--primary); }
@@ -221,7 +221,7 @@
     .final-upload-row .final-ip { font-family: ui-monospace, monospace; }
     .final-drag { cursor: grab; text-align: center; color: var(--muted); user-select: none; touch-action: none; font-size: .8rem; }
     .final-upload-row button { padding: 3px 1px; min-width: 0; font-size: .6rem; white-space: nowrap; height: 25px; }
-    .final-upload-row .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; }
+    .final-upload-row .final-remove { background: #FCE7E7; border-color: #FECACA; color: #B91C1C; padding: 0; width: 24px; min-width: 24px; height: 22px; font-size: 1.15rem; line-height: 1; font-weight: 700; border-radius: 4px; }
     .final-upload-row .final-latency-test { background: #E74C3C; border-color: #E74C3C; color: white; }
     .final-upload-row .final-speed-test { background: #2563eb; border-color: #2563eb; color: white; }
     .final-upload-hint { font-size: .68rem; margin-bottom: 5px; }
@@ -695,7 +695,7 @@
         updateActionButtons();
         return;
       }
-      container.innerHTML = '<div class="final-upload-head"><span>×</span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span>延迟</span><span>测速</span><span>排序</span></div>' + finalItems.map((it, index) => `
+      container.innerHTML = '<div class="final-upload-head"><span></span><span>IP / 域名</span><span>端口</span><span>国家</span><span>线路</span><span>延迟</span><span>速度</span><span></span><span></span><span></span></div>' + finalItems.map((it, index) => `
         <div class="final-upload-row" draggable="true" data-final-key="${escapeHtml(it.sourceKey)}">
           <button type="button" class="final-remove" data-action="remove" title="从最终上传列表移除" aria-label="移除">×</button>
           <input class="final-ip" data-field="editIp" value="${escapeHtml(it.editIp)}" aria-label="上传 IP" title="IP / 域名" readonly />
