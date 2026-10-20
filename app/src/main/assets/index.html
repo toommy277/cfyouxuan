@@ -527,7 +527,7 @@
           customInput: Boolean(source),
           route: (it.route || "").toLowerCase() === "none" ? "" : (it.route || ""),
           country: it.country || (source ? "" : region),
-          speedMbps: null, speedError: null, speedStatus: ""
+          speedError: null, speedStatus: ""
         }));
         const customSource = Boolean(source);
         if (customSource) {
@@ -1045,7 +1045,7 @@
           const key = itemKey(it);
           const checked = selected.has(key) ? "checked" : "";
           const latency = it.latencyMs != null
-            ? `<span class="badge ${it.ok ? "ok" : "fail"}">${escapeHtml(it.latencyMs)} ms</span>`
+            ? `<span class="badge ${it.ok === false ? "fail" : "ok"}">${escapeHtml(it.latencyMs)} ms</span>`
             : (it.error ? `<span class="badge fail">${escapeHtml(it.error)}</span>` : "-");
           const speed = it.speedStatus ? escapeHtml(it.speedStatus)
             : (it.speedMbps != null ? `${it.speedMbps.toFixed(1)} Mbps`
