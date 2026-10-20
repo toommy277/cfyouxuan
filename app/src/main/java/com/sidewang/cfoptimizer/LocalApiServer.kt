@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -20,9 +21,9 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLParameters
+import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
-import javax.net.ssl.HttpsURLConnection
 
 class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788) {
     private val regionNames = linkedMapOf(
@@ -311,6 +312,33 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         workers.forEach { it.join() }
     }
 
+    // 固定 TCP 目标为指定 IP，同时用目标域名进行 SNI 和标准 HTTPS 主机名校验。
+    // 不关闭证书链或主机名验证；若该 IP 返回的证书不匹配目标域名，握手会失败。
+    private fun openVerifiedTlsSocket(
+        ip: String,
+        port: Int,
+        hostname: String,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int
+    ): SSLSocket {
+        val rawSocket = Socket()
+        try {
+            rawSocket.connect(InetSocketAddress(ip, port), connectTimeoutMs)
+            val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val ssl = factory.createSocket(rawSocket, hostname, port, true) as SSLSocket
+            ssl.soTimeout = readTimeoutMs
+            val params: SSLParameters = ssl.sslParameters
+            params.serverNames = listOf(SNIHostName(hostname))
+            params.endpointIdentificationAlgorithm = "HTTPS"
+            ssl.sslParameters = params
+            ssl.startHandshake()
+            return ssl
+        } catch (e: Exception) {
+            try { rawSocket.close() } catch (_: Exception) {}
+            throw e
+        }
+    }
+
     private fun detectColo(item: JSONObject): String? {
         val host = item.optString("ip").trim()
         val port = item.optInt("port", 443)
@@ -318,15 +346,8 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
         // IP 地址通过 Cloudflare 的主机名握手并把 TCP 连接固定到该 IP；域名则保留其自身 SNI。
         val sniHost = if (validIp(host)) "www.cloudflare.com" else host
         return try {
-            val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
-            socket.soTimeout = 1200
-            socket.connect(InetSocketAddress(host, port), 1000)
+            val socket = openVerifiedTlsSocket(host, port, sniHost, 1000, 1200)
             socket.use { ssl ->
-                val params = ssl.sslParameters
-                params.serverNames = listOf(SNIHostName(sniHost))
-                ssl.sslParameters = params
-                ssl.startHandshake()
-                if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(sniHost, ssl.session)) return null
                 val out = BufferedOutputStream(ssl.outputStream)
                 out.write(("GET /cdn-cgi/trace HTTP/1.1\r\nHost: $sniHost\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: text/plain\r\n\r\n").toByteArray(Charsets.US_ASCII))
                 out.flush()
@@ -485,16 +506,7 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
             try {
                 val ip = item.getString("ip")
                 val port = item.getInt("port")
-                val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
-                socket.soTimeout = 10000
-                socket.connect(InetSocketAddress(ip, port), 5000)
-                val params: SSLParameters = socket.sslParameters
-                params.serverNames = listOf(SNIHostName("speed.cloudflare.com"))
-                socket.sslParameters = params
-                socket.startHandshake()
-                if (!HttpsURLConnection.getDefaultHostnameVerifier().verify("speed.cloudflare.com", socket.session)) {
-                    socket.close(); throw IllegalStateException("TLS 证书主机名验证失败")
-                }
+                val socket = openVerifiedTlsSocket(ip, port, "speed.cloudflare.com", 5000, 10000)
                 val out = BufferedOutputStream(socket.getOutputStream())
                 out.write(("GET /__down?bytes=10000000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nUser-Agent: PhoneCFIPTool/1.0 Android\r\nConnection: close\r\nAccept: */*\r\n\r\n").toByteArray(Charsets.US_ASCII)); out.flush()
                 val inputStream = BufferedInputStream(socket.getInputStream())
