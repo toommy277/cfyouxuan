@@ -545,7 +545,7 @@
         speedSortDirection = null;
         $("speedSortHeader").textContent = "速度 ↕";
         $("speedSortHeader").setAttribute("aria-sort", "none");
-        applyRouteFilter(false);
+        applyRouteFilter();
         const total = Number(data.total ?? sourceItems.length);
         if (!sourceItems.length) setStatus("该地区没有有效 IP，列表为空。", "ok");
         else setStatus(`数据源共 ${total} 个有效 IP，当前筛选 ${allItems.length} 个`, "ok");
@@ -563,14 +563,12 @@
         $("btnLoad").disabled = false;
       }
     }
-    function applyRouteFilter(clearSelection = true) {
+    function applyRouteFilter() {
       const route = $("routeSelect").value || "全部";
       const country = $("regionSelect").value || "JP";
       allItems = sourceItems.filter(it => (country === "全部国家" || countryCategory(it.country) === country) && (route === "全部" || (it.route || "") === route));
-      if (clearSelection) {
-        selected.clear();
-        activeTopSelection = null;
-      }
+      // 线路筛选只改变当前显示范围，不清空跨线路保留的选择状态。
+      activeTopSelection = null;
       currentPage = 1;
       speedSortDirection = null;
       $("speedSortHeader").textContent = "速度 ↕";
