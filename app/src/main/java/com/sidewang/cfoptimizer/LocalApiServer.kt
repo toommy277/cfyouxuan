@@ -276,9 +276,16 @@ class LocalApiServer(private val context: Context) : NanoHTTPD("127.0.0.1", 8788
             route = Regex("(?:^|[^A-Za-z0-9])([A-Z]{3})(?:$|[^A-Za-z0-9])", RegexOption.IGNORE_CASE).find(label)?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: ""
         }
         val country = detectCountry(raw).ifBlank { "" }
+        // Subscription lines may already include metrics, e.g. "68ms 78Mbps".
+        // Read these values for initial display only; the existing manual tests can overwrite them.
+        val latencyMatch = Regex("(?i)(?<![A-Za-z0-9.])([0-9]+(?:\\.[0-9]+)?)\\s*ms(?![A-Za-z])").find(raw)
+        val speedMatch = Regex("(?i)(?<![A-Za-z0-9.])([0-9]+(?:\\.[0-9]+)?)\\s*mbps(?![A-Za-z])").find(raw)
+        val latencyMs = latencyMatch?.groupValues?.get(1)?.toDoubleOrNull()
+        val speedMbps = speedMatch?.groupValues?.get(1)?.toDoubleOrNull()
         return JSONObject().put("id", "$ip:$port:$index").put("ip", ip).put("port", port)
             .put("label", label.ifBlank { fieldsText }).put("route", route).put("country", country).put("original", raw)
-            .put("latencyMs", JSONObject.NULL).put("speedMbps", JSONObject.NULL).put("speedError", JSONObject.NULL).put("speedStatus", "")
+            .put("latencyMs", latencyMs ?: JSONObject.NULL).put("speedMbps", speedMbps ?: JSONObject.NULL)
+            .put("speedError", JSONObject.NULL).put("speedStatus", "")
     }
 
     private fun detectMissingMetadata(items: List<JSONObject>) {
