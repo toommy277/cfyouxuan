@@ -39,6 +39,21 @@ type Config struct {
 
 var configMu sync.Mutex
 
+var heartbeatMu sync.Mutex
+var lastHeartbeat = time.Now()
+
+func touchHeartbeat() {
+	heartbeatMu.Lock()
+	lastHeartbeat = time.Now()
+	heartbeatMu.Unlock()
+}
+
+func heartbeatAge() time.Duration {
+	heartbeatMu.Lock()
+	defer heartbeatMu.Unlock()
+	return time.Since(lastHeartbeat)
+}
+
 func configPath() string {
 	d, err := os.UserConfigDir()
 	if err != nil {
@@ -643,6 +658,11 @@ func api(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 		return
 	}
+	if r.URL.Path == "/api/heartbeat" && r.Method == "GET" {
+		touchHeartbeat()
+		obj(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if r.URL.Path == "/api/regions" && r.Method == "GET" {
 		m := map[string]interface{}{}
 		for k, v := range regions {
@@ -1026,6 +1046,20 @@ func main() {
 		return
 	}
 
+	// The browser page sends a heartbeat while it is open. Once the page is
+	// closed and heartbeats stop, shut down the local HTTP server automatically.
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if heartbeatAge() > 20*time.Second {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				_ = srv.Shutdown(ctx)
+				cancel()
+				return
+			}
+		}
+	}()
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		openBrowser()

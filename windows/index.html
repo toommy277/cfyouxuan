@@ -1226,5 +1226,15 @@
 
 })();
 </script>
+<script>
+// Keep the local server alive only while at least one app page remains open.
+// When the user closes the browser tab/window, heartbeats stop and the server
+// exits automatically after a short grace period.
+(() => {
+  const beat = () => fetch('/api/heartbeat', { cache: 'no-store' }).catch(() => {});
+  beat();
+  window.setInterval(beat, 3000);
+})();
+</script>
 </body>
 </html>
