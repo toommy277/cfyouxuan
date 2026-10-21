@@ -712,6 +712,10 @@
       if (!(isIPv6 || isIPv4 || isDomain)) throw new Error("请输入有效的 IPv4、IPv6 或域名");
       return { ip: host, port: Number(port), ipPort: `${isIPv6 ? `[${host}]` : host}:${port}` };
     }
+    function formatLatencyMs(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? String(Math.round(n)) : "";
+    }
     function finalItemFromSource(item) {
       const sourceKey = itemKey(item);
       return {
@@ -719,7 +723,7 @@
         editIp: String(item.ip || ""), editPort: String(item.port || "443"),
         editCountry: String(item.country || "").toUpperCase(),
         editRoute: String((item.route || "").toLowerCase() === "none" ? "" : (item.route || "")).toUpperCase(),
-        editLatency: item.latencyMs == null ? "" : String(item.latencyMs),
+        editLatency: item.latencyMs == null ? "" : formatLatencyMs(item.latencyMs),
         editSpeed: Number.isFinite(item.speedMbps) ? item.speedMbps.toFixed(1) : ""
       };
     }
@@ -899,7 +903,7 @@
         });
         const data = await r.json();
         if (!r.ok || !data.ok) throw new Error(data.error || "延迟测试失败");
-        item.editLatency = String(data.latencyMs);
+        item.editLatency = formatLatencyMs(data.latencyMs);
         item.latencyMs = data.latencyMs;
         const input = row.querySelector('[data-field="editLatency"]'); if (input) input.value = item.editLatency;
         setStatus("延迟测试成功", "ok");
@@ -1101,7 +1105,7 @@
           const key = itemKey(it);
           const checked = selected.has(key) ? "checked" : "";
           const latency = it.latencyMs != null
-            ? `<span class="badge ${it.ok === false ? "fail" : "ok"}">${escapeHtml(it.latencyMs)} ms</span>`
+            ? `<span class="badge ${it.ok === false ? "fail" : "ok"}">${escapeHtml(formatLatencyMs(it.latencyMs))} ms</span>`
             : (it.error ? `<span class="badge fail">${escapeHtml(it.error)}</span>` : "-");
           const speed = it.speedStatus ? escapeHtml(it.speedStatus)
             : (it.speedMbps != null ? `${it.speedMbps.toFixed(1)} Mbps`
