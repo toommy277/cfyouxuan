@@ -974,20 +974,64 @@ func upload(w http.ResponseWriter, r *http.Request, m map[string]interface{}) {
 	}
 	obj(w, 200, map[string]interface{}{"ok": true, "added": added, "updated": updated, "count": len(out), "message": map[bool]string{true: "订阅已追加", false: "订阅已覆盖"}[mode == "append"], "detail": string(detail)})
 }
+const appURL = "http://127.0.0.1:8788"
+
+func openBrowser() {
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", appURL).Start()
+	} else {
+		_ = exec.Command("xdg-open", appURL).Start()
+	}
+}
+
+// alreadyRunning checks whether the service on the fixed local port is this app.
+// This lets repeated launches reopen the existing UI instead of starting a second server.
+func alreadyRunning() bool {
+	client := &http.Client{Timeout: 700 * time.Millisecond}
+	resp, err := client.Get(appURL + "/api/regions")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var data map[string]interface{}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&data) != nil {
+		return false
+	}
+	_, ok := data["regions"]
+	return ok
+}
+
 func main() {
+	if alreadyRunning() {
+		openBrowser()
+		return
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { api(w, r) })
 	mux.HandleFunc("/api/", api)
 	srv := &http.Server{Addr: "127.0.0.1:8788", Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		time.Sleep(700 * time.Millisecond)
-		u := "http://127.0.0.1:8788"
-		if runtime.GOOS == "windows" {
-			_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
-		} else {
-			_ = exec.Command("xdg-open", u).Start()
+
+	// Bind synchronously so a port conflict is detected before opening a browser.
+	listener, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		if alreadyRunning() {
+			openBrowser()
+			return
 		}
+		log.Printf("无法启动本地服务（127.0.0.1:8788）：%v", err)
+		return
+	}
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		openBrowser()
 	}()
-	log.Println("CF 优选助手已启动：http://127.0.0.1:8788")
-	log.Fatal(srv.ListenAndServe())
+	log.Println("CF 优选助手已启动：" + appURL)
+	if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("本地服务已停止：%v", err)
+	}
 }
