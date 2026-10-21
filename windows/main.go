@@ -95,11 +95,12 @@ func unregisterPage(id string) {
 }
 
 func configPath() string {
-	d, err := os.UserConfigDir()
+	// Keep the upload configuration beside the executable; do not create or use AppData.
+	exe, err := os.Executable()
 	if err != nil {
-		d = "."
+		return filepath.Join(".", "config.json")
 	}
-	return filepath.Join(d, "CFYouxuan", "config.json")
+	return filepath.Join(filepath.Dir(exe), "config.json")
 }
 func readConfig() Config {
 	configMu.Lock()
