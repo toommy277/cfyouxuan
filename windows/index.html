@@ -1231,13 +1231,25 @@
 })();
 </script>
 <script>
-// Keep the local server alive only while at least one app page remains open.
-// When the user closes the browser tab/window, heartbeats stop and the server
-// exits automatically after a short grace period.
+// Register this CFYouxuan tab once; notify the local server when it closes.
+// No periodic heartbeat is used, so background-tab timer throttling cannot stop the server.
 (() => {
-  const beat = () => fetch('/api/heartbeat', { cache: 'no-store' }).catch(() => {});
-  beat();
-  window.setInterval(beat, 3000);
+  const pageId = (window.crypto && typeof window.crypto.randomUUID === 'function')
+    ? window.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  const form = () => new URLSearchParams({ id: pageId });
+  const register = () => fetch('/api/page/open', {
+    method: 'POST', body: form(), cache: 'no-store', keepalive: true
+  }).catch(() => {});
+  const unregister = () => {
+    const body = form();
+    if (!navigator.sendBeacon || !navigator.sendBeacon('/api/page/close', body)) {
+      fetch('/api/page/close', { method: 'POST', body, cache: 'no-store', keepalive: true }).catch(() => {});
+    }
+  };
+  register();
+  window.addEventListener('pagehide', unregister);
+  window.addEventListener('pageshow', event => { if (event.persisted) register(); });
 })();
 </script>
 </body>

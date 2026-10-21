@@ -39,19 +39,59 @@ type Config struct {
 
 var configMu sync.Mutex
 
-var heartbeatMu sync.Mutex
-var lastHeartbeat = time.Now()
+// pageTracker tracks only CFYouxuan pages, not other browser tabs or websites.
+// A page-close notification is best-effort; no periodic heartbeat is used.
+var pageTracker = struct {
+	sync.Mutex
+	active        map[string]struct{}
+	shutdownTimer *time.Timer
+	server        *http.Server
+}{active: make(map[string]struct{})}
 
-func touchHeartbeat() {
-	heartbeatMu.Lock()
-	lastHeartbeat = time.Now()
-	heartbeatMu.Unlock()
+func registerPage(id string) {
+	if id == "" {
+		return
+	}
+	pageTracker.Lock()
+	defer pageTracker.Unlock()
+	if pageTracker.shutdownTimer != nil {
+		pageTracker.shutdownTimer.Stop()
+		pageTracker.shutdownTimer = nil
+	}
+	pageTracker.active[id] = struct{}{}
 }
 
-func heartbeatAge() time.Duration {
-	heartbeatMu.Lock()
-	defer heartbeatMu.Unlock()
-	return time.Since(lastHeartbeat)
+func unregisterPage(id string) {
+	if id == "" {
+		return
+	}
+	pageTracker.Lock()
+	defer pageTracker.Unlock()
+	delete(pageTracker.active, id)
+	if len(pageTracker.active) != 0 || pageTracker.server == nil {
+		return
+	}
+	if pageTracker.shutdownTimer != nil {
+		pageTracker.shutdownTimer.Stop()
+	}
+	// A short grace period lets a page reload or a newly opened app tab
+	// register before the server exits.
+	pageTracker.shutdownTimer = time.AfterFunc(750*time.Millisecond, func() {
+		pageTracker.Lock()
+		if len(pageTracker.active) != 0 {
+			pageTracker.shutdownTimer = nil
+			pageTracker.Unlock()
+			return
+		}
+		srv := pageTracker.server
+		pageTracker.shutdownTimer = nil
+		pageTracker.Unlock()
+		if srv != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+		}
+	})
 }
 
 func configPath() string {
@@ -658,9 +698,17 @@ func api(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 		return
 	}
-	if r.URL.Path == "/api/heartbeat" && r.Method == "GET" {
-		touchHeartbeat()
-		obj(w, 200, map[string]bool{"ok": true})
+	if r.URL.Path == "/api/page/open" && r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		registerPage(r.FormValue("id"))
+		obj(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if r.URL.Path == "/api/page/close" && r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		id := r.FormValue("id")
+		obj(w, http.StatusOK, map[string]bool{"ok": true})
+		unregisterPage(id)
 		return
 	}
 	if r.URL.Path == "/api/regions" && r.Method == "GET" {
@@ -994,6 +1042,7 @@ func upload(w http.ResponseWriter, r *http.Request, m map[string]interface{}) {
 	}
 	obj(w, 200, map[string]interface{}{"ok": true, "added": added, "updated": updated, "count": len(out), "message": map[bool]string{true: "订阅已追加", false: "订阅已覆盖"}[mode == "append"], "detail": string(detail)})
 }
+
 const appURL = "http://127.0.0.1:8788"
 
 func openBrowser() {
@@ -1046,20 +1095,9 @@ func main() {
 		return
 	}
 
-	// The browser page sends a heartbeat while it is open. Once the page is
-	// closed and heartbeats stop, shut down the local HTTP server automatically.
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if heartbeatAge() > 20*time.Second {
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				_ = srv.Shutdown(ctx)
-				cancel()
-				return
-			}
-		}
-	}()
+	pageTracker.Lock()
+	pageTracker.server = srv
+	pageTracker.Unlock()
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		openBrowser()
