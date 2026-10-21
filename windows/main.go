@@ -762,8 +762,8 @@ func api(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sort.SliceStable(aliveItems, func(i, j int) bool {
-			a, aok := items[i]["latencyMs"].(float64)
-			b, bok := items[j]["latencyMs"].(float64)
+			a, aok := aliveItems[i]["latencyMs"].(float64)
+			b, bok := aliveItems[j]["latencyMs"].(float64)
 			if aok != bok {
 				return aok
 			}
