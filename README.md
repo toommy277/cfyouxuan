@@ -48,8 +48,6 @@ Android App 使用 WebView 显示 `index.html` 页面，由 Kotlin 本地服务�
 
 ## Worker 部署要求
 
-部署 Worker 前，必须配置以下两项。
-
 ### 1. KV 命名空间绑定
 
 在 Cloudflare Workers 的 **Settings → Bindings** 中添加 KV namespace 绑定：
@@ -121,17 +119,3 @@ Authorization: Bearer 你的UPDATE_SECRET
 首次使用时，需要允许仓库运行 GitHub Actions。
 
 ---
-
-## 验证说明
-
-生成项目压缩包不等于 APK 已成功编译或完成真机测试。
-
-请在 Android Studio 或 GitHub Actions 中实际构建，并在设备上验证：
-
-- 数据加载
-- 测速
-- 国家与线路筛选
-- 覆盖上传
-- 追加上传
-
-追加上传能否成功，取决于 App 与 Worker 的请求方式、认证密钥及根路径返回内容是否匹配。
